@@ -1,13 +1,13 @@
-How to contribute
-#################
+Contributing and feedback guidelines
+####################################
 
 There are many ways to contribute to Pelican. You can improve the
 documentation, add missing features, and fix bugs (or just report them). You
 can also help out by reviewing and commenting on
 `existing issues <https://github.com/getpelican/pelican/issues>`_.
 
-Don't hesitate to fork Pelican and submit a pull request on GitHub. When doing
-so, please adhere to the following guidelines.
+Don't hesitate to fork Pelican and submit an issue or pull request on GitHub.
+When doing so, please adhere to the following guidelines.
 
 .. include:: ../CONTRIBUTING.rst
 
@@ -47,16 +47,6 @@ Or using ``pip``::
 
     $ pip install -e .
 
-Coding standards
-================
-
-Try to respect what is described in the `PEP8 specification
-<http://www.python.org/dev/peps/pep-0008/>`_ when making contributions. This
-can be eased via the `pep8 <http://pypi.python.org/pypi/pep8>`_ or `flake8
-<http://pypi.python.org/pypi/flake8/>`_ tools, the latter of which in
-particular will give you some useful hints about ways in which the
-code/formatting can be improved.
-
 Building the docs
 =================
 
@@ -90,6 +80,8 @@ functional tests. To do so, you can use the following two commands::
 
     $ LC_ALL=en_US.utf8 pelican -o pelican/tests/output/custom/ \
         -s samples/pelican.conf.py samples/content/
+    $ LC_ALL=fr_FR.utf8 pelican -o pelican/tests/output/custom_locale/ \
+        -s samples/pelican.conf_FR.py samples/content/
     $ LC_ALL=en_US.utf8 pelican -o pelican/tests/output/basic/ \
         samples/content/
 

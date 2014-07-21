@@ -2,6 +2,7 @@
 from __future__ import unicode_literals, print_function
 
 import os
+import six
 import math
 import random
 import logging
@@ -110,29 +111,32 @@ class Generator(object):
             return True
         return False
 
-    def get_files(self, path, exclude=[], extensions=None):
+    def get_files(self, paths, exclude=[], extensions=None):
         """Return a list of files to use, based on rules
 
-        :param path: the path to search (relative to self.path)
+        :param paths: the list pf paths to search (relative to self.path)
         :param exclude: the list of path to exclude
         :param extensions: the list of allowed extensions (if False, all
             extensions are allowed)
         """
+        if isinstance(paths, six.string_types):
+            paths = [paths] # backward compatibility for older generators
         files = []
-        root = os.path.join(self.path, path)
+        for path in paths:
+            root = os.path.join(self.path, path)
 
-        if os.path.isdir(root):
-            for dirpath, dirs, temp_files in os.walk(root, followlinks=True):
-                for e in exclude:
-                    if e in dirs:
-                        dirs.remove(e)
-                reldir = os.path.relpath(dirpath, self.path)
-                for f in temp_files:
-                    fp = os.path.join(reldir, f)
-                    if self._include_path(fp, extensions):
-                        files.append(fp)
-        elif os.path.exists(root) and self._include_path(path, extensions):
-            files.append(path)  # can't walk non-directories
+            if os.path.isdir(root):
+                for dirpath, dirs, temp_files in os.walk(root, followlinks=True):
+                    for e in exclude:
+                        if e in dirs:
+                            dirs.remove(e)
+                    reldir = os.path.relpath(dirpath, self.path)
+                    for f in temp_files:
+                        fp = os.path.join(reldir, f)
+                        if self._include_path(fp, extensions):
+                            files.append(fp)
+            elif os.path.exists(root) and self._include_path(path, extensions):
+                files.append(path)  # can't walk non-directories
         return files
 
     def add_source_path(self, content):
@@ -347,31 +351,22 @@ class ArticlesGenerator(CachingGenerator):
                 # format string syntax can be used for specifying the
                 # period archive dates
                 date = archive[0].date
-                # Under python 2, with non-ascii locales, u"{:%b}".format(date) might raise UnicodeDecodeError
-                # because u"{:%b}".format(date) will call date.__format__(u"%b"), which will return a byte string
-                # and not a unicode string.
-                # eg:
-                # locale.setlocale(locale.LC_ALL, 'ja_JP.utf8')
-                # date.__format__(u"%b") == '12\xe6\x9c\x88' # True
-                try:
-                    save_as = save_as_fmt.format(date=date)
-                except UnicodeDecodeError:
-                    # Python2 only:
-                    # Let date.__format__() work with byte strings instead of characters since it fails to work with characters
-                    bytes_save_as_fmt = save_as_fmt.encode('utf8')
-                    bytes_save_as     = bytes_save_as_fmt.format(date=date)
-                    save_as           = unicode(bytes_save_as,'utf8')
+                save_as = save_as_fmt.format(date=date)
                 context = self.context.copy()
 
                 if key == period_date_key['year']:
                     context["period"] = (_period,)
-                elif key == period_date_key['month']:
-                    context["period"] = (_period[0],
-                                         calendar.month_name[_period[1]])
                 else:
-                    context["period"] = (_period[0],
-                                         calendar.month_name[_period[1]],
-                                         _period[2])
+                    month_name = calendar.month_name[_period[1]]
+                    if not six.PY3:
+                        month_name = month_name.decode('utf-8')
+                    if key == period_date_key['month']:
+                        context["period"] = (_period[0],
+                                             month_name)
+                    else:
+                        context["period"] = (_period[0],
+                                             month_name,
+                                             _period[2])
 
                 write(save_as, template, context,
                       dates=archive, blog=True)
@@ -462,7 +457,7 @@ class ArticlesGenerator(CachingGenerator):
         all_articles = []
         all_drafts = []
         for f in self.get_files(
-                self.settings['ARTICLE_DIR'],
+                self.settings['ARTICLE_PATHS'],
                 exclude=self.settings['ARTICLE_EXCLUDES']):
             article = self.get_cached_data(f, None)
             if article is None:
@@ -587,7 +582,7 @@ class PagesGenerator(CachingGenerator):
         all_pages = []
         hidden_pages = []
         for f in self.get_files(
-                self.settings['PAGE_DIR'],
+                self.settings['PAGE_PATHS'],
                 exclude=self.settings['PAGE_EXCLUDES']):
             page = self.get_cached_data(f, None)
             if page is None:
@@ -662,20 +657,17 @@ class StaticGenerator(Generator):
 
     def generate_context(self):
         self.staticfiles = []
-
-        # walk static paths
-        for static_path in self.settings['STATIC_PATHS']:
-            for f in self.get_files(
-                    static_path, extensions=False):
-                static = self.readers.read_file(
-                    base_path=self.path, path=f, content_class=Static,
-                    fmt='static', context=self.context,
-                    preread_signal=signals.static_generator_preread,
-                    preread_sender=self,
-                    context_signal=signals.static_generator_context,
-                    context_sender=self)
-                self.staticfiles.append(static)
-                self.add_source_path(static)
+        for f in self.get_files(self.settings['STATIC_PATHS'],
+                                extensions=False):
+            static = self.readers.read_file(
+                base_path=self.path, path=f, content_class=Static,
+                fmt='static', context=self.context,
+                preread_signal=signals.static_generator_preread,
+                preread_sender=self,
+                context_signal=signals.static_generator_context,
+                context_sender=self)
+            self.staticfiles.append(static)
+            self.add_source_path(static)
         self._update_context(('staticfiles',))
         signals.static_generator_finalized.send(self)
 

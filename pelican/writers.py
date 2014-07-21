@@ -8,12 +8,10 @@ import logging
 
 if not six.PY3:
     from codecs import open
-    from urlparse import urlparse
-else:
-    from urllib.parse import urlparse
 
 from feedgenerator import Atom1Feed, Rss201rev2Feed
 from jinja2 import Markup
+from six.moves.urllib.parse import urlparse
 
 from pelican.paginator import Paginator
 from pelican.utils import (get_relative_path, path_to_url, set_date_tzinfo,
@@ -153,12 +151,7 @@ class Writer(object):
 
         def _write_file(template, localcontext, output_path, name, override):
             """Render the template write the file."""
-            old_locale = locale.setlocale(locale.LC_ALL)
-            locale.setlocale(locale.LC_ALL, str('C'))
-            try:
-                output = template.render(localcontext)
-            finally:
-                locale.setlocale(locale.LC_ALL, old_locale)
+            output = template.render(localcontext)
             path = os.path.join(output_path, name)
             try:
                 os.makedirs(os.path.dirname(path))

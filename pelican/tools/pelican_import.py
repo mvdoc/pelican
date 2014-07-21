@@ -4,17 +4,10 @@
 from __future__ import unicode_literals, print_function
 import argparse
 try:
-    # py3k import
-    from html.parser import HTMLParser
-    from urllib.request import urlretrieve
-    from urllib.parse import urlparse
-    from urllib.error import URLError
+    from html import unescape  # py3.4+
 except ImportError:
-    # py2 import
-    from HTMLParser import HTMLParser  # NOQA
-    from urllib import urlretrieve
-    from urlparse import urlparse
-    from urllib2 import URLError
+    from six.moves.html_parser import HTMLParser
+    unescape = HTMLParser().unescape
 import os
 import re
 import subprocess
@@ -23,8 +16,11 @@ import time
 import logging
 
 from codecs import open
+from six.moves.urllib.error import URLError
+from six.moves.urllib.parse import urlparse
+from six.moves.urllib.request import urlretrieve
 
-from pelican.utils import slugify
+from pelican.utils import slugify, SafeDatetime
 from pelican.log import init
 
 logger = logging.getLogger(__name__)
@@ -132,7 +128,7 @@ def wp2fields(xml, wp_custpost=False):
 
             try:
                 # Use HTMLParser due to issues with BeautifulSoup 3
-                title = HTMLParser().unescape(item.title.contents[0])
+                title = unescape(item.title.contents[0])
             except IndexError:
                 title = 'No title [%s]' % item.find('post_name').string
                 logger.warning('Post "%s" is lacking a proper title' % title)
@@ -306,7 +302,7 @@ def dc2fields(file):
 def posterous2fields(api_token, email, password):
     """Imports posterous posts"""
     import base64
-    from datetime import datetime, timedelta
+    from datetime import timedelta
     try:
         # py3k import
         import json
@@ -343,7 +339,7 @@ def posterous2fields(api_token, email, password):
                 slug = slugify(post.get('title'))
             tags = [tag.get('name') for tag in post.get('tags')]
             raw_date = post.get('display_date')
-            date_object = datetime.strptime(raw_date[:-6], "%Y/%m/%d %H:%M:%S")
+            date_object = SafeDatetime.strptime(raw_date[:-6], "%Y/%m/%d %H:%M:%S")
             offset = int(raw_date[-5:])
             delta = timedelta(hours = offset / 100)
             date_object -= delta

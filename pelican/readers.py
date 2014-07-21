@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, print_function
 
-import datetime
 import logging
 import os
 import re
@@ -10,6 +9,7 @@ import docutils
 import docutils.core
 import docutils.io
 from docutils.writers.html4css1 import HTMLTranslator
+import six
 
 # import the directives to have pygments support
 from pelican import rstdirectives  # NOQA
@@ -18,22 +18,14 @@ try:
 except ImportError:
     Markdown = False  # NOQA
 try:
-    from asciidocapi import AsciiDocAPI
-    asciidoc = True
-except ImportError:
-    asciidoc = False
-try:
     from html import escape
 except ImportError:
     from cgi import escape
-try:
-    from html.parser import HTMLParser
-except ImportError:
-    from HTMLParser import HTMLParser
+from six.moves.html_parser import HTMLParser
 
 from pelican import signals
 from pelican.contents import Page, Category, Tag, Author
-from pelican.utils import get_date, pelican_open, FileStampDataCacher
+from pelican.utils import get_date, pelican_open, FileStampDataCacher, SafeDatetime
 
 
 METADATA_PROCESSORS = {
@@ -47,7 +39,6 @@ METADATA_PROCESSORS = {
 }
 
 logger = logging.getLogger(__name__)
-
 
 class BaseReader(object):
     """Base class to read files.
@@ -127,6 +118,19 @@ class RstReader(BaseReader):
     enabled = bool(docutils)
     file_extensions = ['rst']
 
+    class FileInput(docutils.io.FileInput):
+        """Patch docutils.io.FileInput to remove "U" mode in py3.
+
+        Universal newlines is enabled by default and "U" mode is deprecated
+        in py3.
+
+        """
+
+        def __init__(self, *args, **kwargs):
+            if six.PY3:
+                kwargs['mode'] = kwargs.get('mode', 'r').replace('U', '')
+            docutils.io.FileInput.__init__(self, *args, **kwargs)
+
     def __init__(self, *args, **kwargs):
         super(RstReader, self).__init__(*args, **kwargs)
 
@@ -158,12 +162,14 @@ class RstReader(BaseReader):
         extra_params = {'initial_header_level': '2',
                         'syntax_highlight': 'short',
                         'input_encoding': 'utf-8',
-                        'exit_status_level': 2}
+                        'exit_status_level': 2,
+                        'embed_stylesheet': False}
         user_params = self.settings.get('DOCUTILS_SETTINGS')
         if user_params:
             extra_params.update(user_params)
 
         pub = docutils.core.Publisher(
+            source_class=self.FileInput,
             destination_class=docutils.io.StringOutput)
         pub.set_components('standalone', 'restructuredtext', 'html')
         pub.writer.translator_class = PelicanHTMLTranslator
@@ -236,7 +242,11 @@ class HTMLReader(BaseReader):
 
     class _HTMLParser(HTMLParser):
         def __init__(self, settings, filename):
-            HTMLParser.__init__(self)
+            try:
+                # Python 3.4+
+                HTMLParser.__init__(self, convert_charrefs=False)
+            except TypeError:
+                HTMLParser.__init__(self)
             self.body = ''
             self.metadata = {}
             self.settings = settings
@@ -349,40 +359,6 @@ class HTMLReader(BaseReader):
         return parser.body, metadata
 
 
-class AsciiDocReader(BaseReader):
-    """Reader for AsciiDoc files"""
-
-    enabled = bool(asciidoc)
-    file_extensions = ['asc', 'adoc', 'asciidoc']
-    default_options = ["--no-header-footer", "-a newline=\\n"]
-
-    def read(self, source_path):
-        """Parse content and metadata of asciidoc files"""
-        from cStringIO import StringIO
-        with pelican_open(source_path) as source:
-            text = StringIO(source)
-        content = StringIO()
-        ad = AsciiDocAPI()
-
-        options = self.settings['ASCIIDOC_OPTIONS']
-        if isinstance(options, (str, unicode)):
-            options = [m.strip() for m in options.split(',')]
-        options = self.default_options + options
-        for o in options:
-            ad.options(*o.split())
-
-        ad.execute(text, content, backend="html4")
-        content = content.getvalue()
-
-        metadata = {}
-        for name, value in ad.asciidoc.document.attributes.items():
-            name = name.lower()
-            metadata[name] = self.process_metadata(name, value)
-        if 'doctitle' in metadata:
-            metadata['title'] = metadata['doctitle']
-        return content, metadata
-
-
 class Readers(FileStampDataCacher):
     """Interface for all readers.
 
@@ -464,6 +440,8 @@ class Readers(FileStampDataCacher):
         metadata.update(parse_path_metadata(
             source_path=source_path, settings=self.settings,
             process=reader.process_metadata))
+        reader_name = reader.__class__.__name__
+        metadata['reader'] = reader_name.replace('Reader', '').lower()
 
         content, reader_metadata = self.get_cached_data(path, (None, None))
         if content is None:
@@ -533,7 +511,7 @@ def default_metadata(settings=None, process=None):
                 value = process('category', value)
             metadata['category'] = value
         if settings.get('DEFAULT_DATE', None) and settings['DEFAULT_DATE'] != 'fs':
-            metadata['date'] = datetime.datetime(*settings['DEFAULT_DATE'])
+            metadata['date'] = SafeDatetime(*settings['DEFAULT_DATE'])
     return metadata
 
 
@@ -541,7 +519,7 @@ def path_metadata(full_path, source_path, settings=None):
     metadata = {}
     if settings:
         if settings.get('DEFAULT_DATE', None) == 'fs':
-            metadata['date'] = datetime.datetime.fromtimestamp(
+            metadata['date'] = SafeDatetime.fromtimestamp(
                 os.stat(full_path).st_ctime)
         metadata.update(settings.get('EXTRA_PATH_METADATA', {}).get(
             source_path, {}))
@@ -564,7 +542,7 @@ def parse_path_metadata(source_path, settings=None, process=None):
     ...     process=reader.process_metadata)
     >>> pprint.pprint(metadata)  # doctest: +ELLIPSIS
     {'category': <pelican.urlwrappers.Category object at ...>,
-     'date': datetime.datetime(2013, 1, 1, 0, 0),
+     'date': SafeDatetime(2013, 1, 1, 0, 0),
      'slug': 'my-slug'}
     """
     metadata = {}

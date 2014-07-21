@@ -111,10 +111,12 @@ Setting name (followed by default value, if any)                                
 ``PATH``                                                                         Path to content directory to be processed by Pelican. If undefined,
                                                                                  and content path is not specified via an argument to the ``pelican``
                                                                                  command, Pelican will use the current working directory.
-``PAGE_DIR = 'pages'``                                                           Directory to look at for pages, relative to ``PATH``.
-``PAGE_EXCLUDES = ()``                                                           A list of directories to exclude when looking for pages.
-``ARTICLE_DIR = ''``                                                             Directory to look at for articles, relative to ``PATH``.
-``ARTICLE_EXCLUDES = ('pages',)``                                                A list of directories to exclude when looking for articles.
+``PAGE_PATHS = ['pages']``                                                       A list of directories to look at for pages, relative to ``PATH``.
+``PAGE_EXCLUDES = []``                                                           A list of directories to exclude when looking for pages in addition
+                                                                                 to ``ARTICLE_PATHS``.
+``ARTICLE_PATHS = ['']``                                                         A list of directories to look at for articles, relative to ``PATH``.
+``ARTICLE_EXCLUDES = []``                                                        A list of directories to exclude when looking for articles in addition
+                                                                                 to ``PAGE_PATHS``.
 ``OUTPUT_SOURCES = False``                                                       Set to True if you want to copy the articles and pages in their
                                                                                  original format (e.g. Markdown or reStructuredText) to the
                                                                                  specified ``OUTPUT_PATH``.
@@ -125,6 +127,7 @@ Setting name (followed by default value, if any)                                
                                                                                  not. Only set this to ``True`` when developing/testing and only
                                                                                  if you fully understand the effect it can have on links/feeds.
 ``PLUGINS = []``                                                                 The list of plugins to load. See :ref:`plugins`.
+``PLUGIN_PATHS = []``                                                            A list of directories where to look for plugins. See :ref:`plugins`.
 ``SITENAME = 'A Pelican Blog'``                                                  Your site name
 ``SITEURL``                                                                      Base URL of your website. Not defined by default,
                                                                                  so it is best to specify your SITEURL; if you do not, feeds
@@ -159,8 +162,6 @@ Setting name (followed by default value, if any)                                
                                                                                  Can be used to separate templates from the theme.
                                                                                  Example: projects, resume, profile ...
                                                                                  These templates need to use ``DIRECT_TEMPLATES`` setting.
-``ASCIIDOC_OPTIONS = []``                                                        A list of options to pass to AsciiDoc. See the `manpage
-                                                                                 <http://www.methods.co.nz/asciidoc/manpage.html>`_.
 ``WITH_FUTURE_DATES = True``                                                     If disabled, content with dates in the future will get a default
                                                                                  status of ``draft``. See :ref:`reading_only_modified_content`
                                                                                  for caveats.
@@ -172,9 +173,9 @@ Setting name (followed by default value, if any)                                
 ``PYGMENTS_RST_OPTIONS = []``                                                    A list of default Pygments settings for your reStructuredText
                                                                                  code blocks. See :ref:`internal_pygments_options` for a list of
                                                                                  supported options.
-``SLUGIFY_SOURCE = 'input'``                                                     Specifies where you want the slug to be automatically generated
+``SLUGIFY_SOURCE = 'title'``                                                     Specifies where you want the slug to be automatically generated
                                                                                  from. Can be set to ``title`` to use the 'Title:' metadata tag or
-                                                                                 ``basename`` to use the article's basename when creating the slug.
+                                                                                 ``basename`` to use the article's file name when creating the slug.
 ``CACHE_CONTENT = True``                                                         If ``True``, save content in a cache file.
                                                                                  See :ref:`reading_only_modified_content` for details about caching.
 ``CONTENT_CACHING_LAYER = 'reader'``                                             If set to ``'reader'``, save only the raw content and metadata
@@ -196,7 +197,7 @@ Setting name (followed by default value, if any)                                
 
 
 URL settings
-------------
+============
 
 The first thing to understand is that there are currently two supported methods
 for URL formation: *relative* and *absolute*. Relative URLs are useful
@@ -311,7 +312,7 @@ Setting name (followed by default value, if any)        What does it do?
 ``YEAR_ARCHIVE_SAVE_AS = ''``                           The location to save per-year archives of your posts.
 ``MONTH_ARCHIVE_SAVE_AS = ''``                          The location to save per-month archives of your posts.
 ``DAY_ARCHIVE_SAVE_AS = ''``                            The location to save per-day archives of your posts.
-``SLUG_SUBSTITUTIONS` = ()``                            Substitutions to make prior to stripping out
+``SLUG_SUBSTITUTIONS = ()``                             Substitutions to make prior to stripping out
                                                         non-alphanumerics when generating slugs. Specified
                                                         as a list of 2-tuples of ``(from, to)`` which are
                                                         applied in order.

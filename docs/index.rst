@@ -13,7 +13,7 @@ Pelican |release|
 Pelican is a static site generator, written in Python_. Highlights include:
 
 * Write your content directly with your editor of choice
-  in reStructuredText_, Markdown_, or AsciiDoc_ formats
+  in reStructuredText_ or Markdown_ formats
 * Includes a simple CLI tool to (re)generate your site
 * Easy to interface with distributed version control systems and web hooks
 * Completely static output is easy to host anywhere
@@ -47,20 +47,10 @@ Source code
 
 You can access the source code at: https://github.com/getpelican/pelican
 
-Feedback / Contact us
----------------------
+How to get help, contribute, or provide feedback
+------------------------------------------------
 
-If you want to see new features in Pelican, don't hesitate to offer suggestions,
-clone the repository, etc. There are many ways to :doc:`contribute<contribute>`.
-That's open source, dude!
-
-Send a message to "authors at getpelican dot com" with any requests/feedback.
-For a more immediate response, you can also join the team via IRC at
-`#pelican on Freenode`_ — if you don't have an IRC client handy, use the
-webchat_ for quick feedback. If you ask a question via IRC and don't get an
-immediate response, don't leave the channel! It may take a few hours because
-of time zone differences, but if you are patient and remain in the channel,
-someone will almost always respond to your inquiry.
+See our :doc:`feedback and contribution submission guidelines <contribute>`.
 
 Documentation
 -------------
@@ -89,10 +79,7 @@ Documentation
 .. _Python: http://www.python.org/
 .. _reStructuredText: http://docutils.sourceforge.net/rst.html
 .. _Markdown: http://daringfireball.net/projects/markdown/
-.. _AsciiDoc: http://www.methods.co.nz/asciidoc/index.html
 .. _Jinja2: http://jinja.pocoo.org/
 .. _`Pelican documentation`: http://docs.getpelican.com/latest/
 .. _`Pelican's internals`: http://docs.getpelican.com/en/latest/internals.html
 .. _`Pelican plugins`: https://github.com/getpelican/pelican-plugins
-.. _`#pelican on Freenode`: irc://irc.freenode.net/pelican
-.. _webchat: http://webchat.freenode.net/?channels=pelican&uio=d4
