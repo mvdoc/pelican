@@ -5,7 +5,7 @@ import shutil
 import os
 import time
 import locale
-from sys import platform, version_info
+from sys import platform
 from tempfile import mkdtemp
 
 import pytz
@@ -263,6 +263,9 @@ class TestUtils(LoggedTestCase):
         self.assertEqual(utils.strftime(d, '%d/%m/%y'), '29/08/12')
         self.assertEqual(utils.strftime(d, '%d/%m/%Y'), '29/08/2012')
 
+        # RFC 3339
+        self.assertEqual(utils.strftime(d, '%Y-%m-%dT%H:%M:%SZ'),'2012-08-29T00:00:00Z')
+
         # % escaped
         self.assertEqual(utils.strftime(d, '%d%%%m%%%y'), '29%08%12')
         self.assertEqual(utils.strftime(d, '%d %% %m %% %y'), '29 % 08 % 12')
@@ -280,6 +283,13 @@ class TestUtils(LoggedTestCase):
         self.assertEqual(utils.strftime(d, '%d/%m/%Y Øl trinken beim Besäufnis'),
                          '29/08/2012 Øl trinken beim Besäufnis')
 
+        # alternative formatting options
+        self.assertEqual(utils.strftime(d, '%-d/%-m/%y'), '29/8/12')
+        self.assertEqual(utils.strftime(d, '%-H:%-M:%-S'), '0:0:0')
+
+        d = utils.SafeDatetime(2012, 8, 9)
+        self.assertEqual(utils.strftime(d, '%-d/%-m/%y'), '9/8/12')
+
 
     # test the output of utils.strftime in a different locale
     # Turkish locale
@@ -288,12 +298,12 @@ class TestUtils(LoggedTestCase):
                          'Turkish locale needed')
     def test_strftime_locale_dependent_turkish(self):
         # store current locale
-        old_locale = locale.setlocale(locale.LC_TIME)
+        old_locale = locale.setlocale(locale.LC_ALL)
 
         if platform == 'win32':
-            locale.setlocale(locale.LC_TIME, str('Turkish'))
+            locale.setlocale(locale.LC_ALL, str('Turkish'))
         else:
-            locale.setlocale(locale.LC_TIME, str('tr_TR.UTF-8'))
+            locale.setlocale(locale.LC_ALL, str('tr_TR.UTF-8'))
 
         d = utils.SafeDatetime(2012, 8, 29)
 
@@ -311,7 +321,7 @@ class TestUtils(LoggedTestCase):
             '2012 yılında %üretim artışı')
 
         # restore locale back
-        locale.setlocale(locale.LC_TIME, old_locale)
+        locale.setlocale(locale.LC_ALL, old_locale)
 
 
     # test the output of utils.strftime in a different locale
@@ -321,12 +331,12 @@ class TestUtils(LoggedTestCase):
                          'French locale needed')
     def test_strftime_locale_dependent_french(self):
         # store current locale
-        old_locale = locale.setlocale(locale.LC_TIME)
+        old_locale = locale.setlocale(locale.LC_ALL)
 
         if platform == 'win32':
-            locale.setlocale(locale.LC_TIME, str('French'))
+            locale.setlocale(locale.LC_ALL, str('French'))
         else:
-            locale.setlocale(locale.LC_TIME, str('fr_FR.UTF-8'))
+            locale.setlocale(locale.LC_ALL, str('fr_FR.UTF-8'))
 
         d = utils.SafeDatetime(2012, 8, 29)
 
@@ -345,7 +355,13 @@ class TestUtils(LoggedTestCase):
             '%écrits en 2012')
 
         # restore locale back
-        locale.setlocale(locale.LC_TIME, old_locale)
+        locale.setlocale(locale.LC_ALL, old_locale)
+
+
+    def test_maybe_pluralize(self):
+        self.assertEqual(utils.maybe_pluralize(0, 'Article', 'Articles'), '0 Articles')
+        self.assertEqual(utils.maybe_pluralize(1, 'Article', 'Articles'), '1 Article')
+        self.assertEqual(utils.maybe_pluralize(2, 'Article', 'Articles'), '2 Articles')
 
 
 class TestCopy(unittest.TestCase):
@@ -461,8 +477,11 @@ class TestDateFormatter(unittest.TestCase):
                          locale_available('French'),
                          'French locale needed')
     def test_french_strftime(self):
-        # This test tries to reproduce an issue that occured with python3.3 under macos10 only
-        locale.setlocale(locale.LC_ALL, str('fr_FR.UTF-8'))
+        # This test tries to reproduce an issue that occurred with python3.3 under macos10 only
+        if platform == 'win32':
+            locale.setlocale(locale.LC_ALL, str('French'))
+        else:
+            locale.setlocale(locale.LC_ALL, str('fr_FR.UTF-8'))
         date = utils.SafeDatetime(2014,8,14)
         # we compare the lower() dates since macos10 returns "Jeudi" for %A whereas linux reports "jeudi"
         self.assertEqual( u'jeudi, 14 août 2014', utils.strftime(date, date_format="%A, %d %B %Y").lower() )
@@ -480,9 +499,13 @@ class TestDateFormatter(unittest.TestCase):
                          locale_available('French'),
                          'French locale needed')
     def test_french_locale(self):
+        if platform == 'win32':
+            locale_string = 'French'
+        else:
+            locale_string = 'fr_FR.UTF-8'
         settings = read_settings(
-            override={'LOCALE': locale.normalize('fr_FR.UTF-8'),
-                      'TEMPLATE_PAGES': {'template/source.html':
+            override = {'LOCALE': locale_string,
+                        'TEMPLATE_PAGES': {'template/source.html':
                                          'generated/file.html'}})
 
         generator = TemplatePagesGenerator(
@@ -509,8 +532,12 @@ class TestDateFormatter(unittest.TestCase):
                          locale_available('Turkish'),
                          'Turkish locale needed')
     def test_turkish_locale(self):
+        if platform == 'win32':
+            locale_string = 'Turkish'
+        else:
+            locale_string = 'tr_TR.UTF-8'
         settings = read_settings(
-            override = {'LOCALE': locale.normalize('tr_TR.UTF-8'),
+            override = {'LOCALE': locale_string,
                         'TEMPLATE_PAGES': {'template/source.html':
                                            'generated/file.html'}})
 

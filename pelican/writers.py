@@ -3,7 +3,6 @@ from __future__ import with_statement, unicode_literals, print_function
 import six
 
 import os
-import locale
 import logging
 
 if not six.PY3:
@@ -68,11 +67,11 @@ class Writer(object):
                 raise RuntimeError('File %s is set to be overridden twice'
                                    % filename)
             else:
-                logger.info('skipping %s' % filename)
+                logger.info('Skipping %s', filename)
                 filename = os.devnull
         elif filename in self._written_files:
             if override:
-                logger.info('overwriting %s' % filename)
+                logger.info('Overwriting %s', filename)
             else:
                 raise RuntimeError('File %s is to be overwritten' % filename)
         if override:
@@ -93,37 +92,36 @@ class Writer(object):
         """
         if not is_selected_for_writing(self.settings, path):
             return
-        old_locale = locale.setlocale(locale.LC_ALL)
-        locale.setlocale(locale.LC_ALL, str('C'))
-        try:
-            self.site_url = context.get(
-                'SITEURL', path_to_url(get_relative_path(path)))
 
-            self.feed_domain = context.get('FEED_DOMAIN')
-            self.feed_url = '{}/{}'.format(self.feed_domain, path)
+        self.site_url = context.get(
+            'SITEURL', path_to_url(get_relative_path(path)))
 
-            feed = self._create_new_feed(feed_type, context)
+        self.feed_domain = context.get('FEED_DOMAIN')
+        self.feed_url = '{}/{}'.format(self.feed_domain, path)
 
-            max_items = len(elements)
-            if self.settings['FEED_MAX_ITEMS']:
-                max_items = min(self.settings['FEED_MAX_ITEMS'], max_items)
-            for i in range(max_items):
-                self._add_item_to_the_feed(feed, elements[i])
+        feed = self._create_new_feed(feed_type, context)
 
-            if path:
-                complete_path = os.path.join(self.output_path, path)
-                try:
-                    os.makedirs(os.path.dirname(complete_path))
-                except Exception:
-                    pass
+        max_items = len(elements)
+        if self.settings['FEED_MAX_ITEMS']:
+            max_items = min(self.settings['FEED_MAX_ITEMS'], max_items)
+        for i in range(max_items):
+            self._add_item_to_the_feed(feed, elements[i])
 
-                encoding = 'utf-8' if six.PY3 else None
-                with self._open_w(complete_path, encoding) as fp:
-                    feed.write(fp, 'utf-8')
-                    logger.info('writing %s' % complete_path)
-            return feed
-        finally:
-            locale.setlocale(locale.LC_ALL, old_locale)
+        if path:
+            complete_path = os.path.join(self.output_path, path)
+            try:
+                os.makedirs(os.path.dirname(complete_path))
+            except Exception:
+                pass
+
+            encoding = 'utf-8' if six.PY3 else None
+            with self._open_w(complete_path, encoding) as fp:
+                feed.write(fp, 'utf-8')
+                logger.info('Writing %s', complete_path)
+
+            signals.feed_written.send(complete_path, context=context, feed=feed)
+        return feed
+
 
     def write_file(self, name, template, context, relative_urls=False,
                    paginated=None, override_output=False, **kwargs):
@@ -151,6 +149,9 @@ class Writer(object):
 
         def _write_file(template, localcontext, output_path, name, override):
             """Render the template write the file."""
+            # set localsiteurl for context so that Contents can adjust links
+            if localcontext['localsiteurl']:
+                context['localsiteurl'] = localcontext['localsiteurl']
             output = template.render(localcontext)
             path = os.path.join(output_path, name)
             try:
@@ -160,20 +161,22 @@ class Writer(object):
 
             with self._open_w(path, 'utf-8', override=override) as f:
                 f.write(output)
-            logger.info('writing {}'.format(path))
+            logger.info('Writing %s', path)
 
             # Send a signal to say we're writing a file with some specific
             # local context.
             signals.content_written.send(path, context=localcontext)
 
-        localcontext = context.copy()
-        if relative_urls:
-            relative_url = path_to_url(get_relative_path(name))
-            context['localsiteurl'] = relative_url
-            localcontext['SITEURL'] = relative_url
-
-        localcontext['output_file'] = name
-        localcontext.update(kwargs)
+        def _get_localcontext(context, name, kwargs, relative_urls):
+            localcontext = context.copy()
+            localcontext['localsiteurl'] = localcontext.get('localsiteurl', None)
+            if relative_urls:
+                relative_url = path_to_url(get_relative_path(name))
+                localcontext['SITEURL'] = relative_url
+                localcontext['localsiteurl'] = relative_url
+            localcontext['output_file'] = name
+            localcontext.update(kwargs)
+            return localcontext
 
         # pagination
         if paginated:
@@ -184,7 +187,7 @@ class Writer(object):
 
             # generated pages, and write
             for page_num in range(list(paginators.values())[0].num_pages):
-                paginated_localcontext = localcontext.copy()
+                paginated_kwargs = kwargs.copy()
                 for key in paginators.keys():
                     paginator = paginators[key]
                     previous_page = paginator.page(page_num) \
@@ -192,15 +195,17 @@ class Writer(object):
                     page = paginator.page(page_num + 1)
                     next_page = paginator.page(page_num + 2) \
                         if page_num + 1 < paginator.num_pages else None
-                    paginated_localcontext.update(
+                    paginated_kwargs.update(
                         {'%s_paginator' % key: paginator,
                          '%s_page' % key: page,
                          '%s_previous_page' % key: previous_page,
                          '%s_next_page' % key: next_page})
 
-                _write_file(template, paginated_localcontext, self.output_path,
+                localcontext = _get_localcontext(context, page.save_as, paginated_kwargs, relative_urls)
+                _write_file(template, localcontext, self.output_path,
                             page.save_as, override_output)
         else:
             # no pagination
+            localcontext = _get_localcontext(context, name, kwargs, relative_urls)
             _write_file(template, localcontext, self.output_path, name,
                         override_output)

@@ -1,17 +1,20 @@
-# -*- coding: utf-8 -*-
 from __future__ import unicode_literals, absolute_import
 
-import six
-from sys import platform
 import locale
+import os.path
+import six
 
-from pelican.tests.support import unittest, get_settings
-
-from pelican.contents import Page, Article, URLWrapper
-from pelican.settings import DEFAULT_CONFIG
-from pelican.utils import truncate_html_words, SafeDatetime
-from pelican.signals import content_object_init
 from jinja2.utils import generate_lorem_ipsum
+from sys import platform
+
+from pelican.contents import (Page, Article, Static, URLWrapper,
+                              Author, Category)
+from pelican.settings import DEFAULT_CONFIG
+from pelican.signals import content_object_init
+from pelican.tests.support import unittest, get_settings
+from pelican.utils import (path_to_url, truncate_html_words, SafeDatetime,
+                           posix_join)
+
 
 # generate one paragraph, enclosed with <p>
 TEST_CONTENT = str(generate_lorem_ipsum(n=1))
@@ -32,7 +35,7 @@ class TestPage(unittest.TestCase):
             'metadata': {
                 'summary': TEST_SUMMARY,
                 'title': 'foo bar',
-                'author': 'Blogger',
+                'author': Author('Blogger', DEFAULT_CONFIG),
             },
             'source_path': '/path/to/file/foo.ext'
         }
@@ -190,14 +193,19 @@ class TestPage(unittest.TestCase):
         return page_kwargs
 
     def test_signal(self):
-        # If a title is given, it should be used to generate the slug.
-
-        def receiver_test_function(sender, instance):
+        def receiver_test_function(sender):
+            receiver_test_function.has_been_called = True
             pass
+        receiver_test_function.has_been_called = False
 
-        content_object_init.connect(receiver_test_function, sender=Page)
+        content_object_init.connect(receiver_test_function)
+        self.assertIn(
+            receiver_test_function,
+            content_object_init.receivers_for(Page))
+
+        self.assertFalse(receiver_test_function.has_been_called)
         Page(**self.page_kwargs)
-        self.assertTrue(content_object_init.has_receivers_for(Page))
+        self.assertTrue(receiver_test_function.has_been_called)
 
     def test_get_content(self):
         # Test that the content is updated with the relative links to
@@ -211,17 +219,20 @@ class TestPage(unittest.TestCase):
                            '<a href="|tag|tagname">link</a>')
         page = Page(**args)
         content = page.get_content('http://notmyidea.org')
-        self.assertEqual(content, ('A simple test, with a '
-                                   '<a href="tag/tagname.html">link</a>'))
+        self.assertEqual(
+            content,
+            ('A simple test, with a '
+             '<a href="http://notmyidea.org/tag/tagname.html">link</a>'))
 
         # Category
         args['content'] = ('A simple test, with a '
                            '<a href="|category|category">link</a>')
         page = Page(**args)
         content = page.get_content('http://notmyidea.org')
-        self.assertEqual(content,
-                         ('A simple test, with a '
-                          '<a href="category/category.html">link</a>'))
+        self.assertEqual(
+            content,
+            ('A simple test, with a '
+             '<a href="http://notmyidea.org/category/category.html">link</a>'))
 
     def test_intrasite_link(self):
         # type does not take unicode in PY2 and bytes in PY3, which in
@@ -370,7 +381,8 @@ class TestPage(unittest.TestCase):
         content = Page(**args)
         assert content.authors == [content.author]
         args['metadata'].pop('author')
-        args['metadata']['authors'] = ['First Author', 'Second Author']
+        args['metadata']['authors'] = [Author('First Author', DEFAULT_CONFIG),
+                                       Author('Second Author', DEFAULT_CONFIG)]
         content = Page(**args)
         assert content.authors
         assert content.author == content.authors[0]
@@ -392,8 +404,8 @@ class TestArticle(TestPage):
         settings['ARTICLE_URL'] = '{author}/{category}/{slug}/'
         settings['ARTICLE_SAVE_AS'] = '{author}/{category}/{slug}/index.html'
         article_kwargs = self._copy_page_kwargs()
-        article_kwargs['metadata']['author'] = "O'Brien"
-        article_kwargs['metadata']['category'] = 'C# & stuff'
+        article_kwargs['metadata']['author'] = Author("O'Brien", settings)
+        article_kwargs['metadata']['category'] = Category('C# & stuff', settings)
         article_kwargs['metadata']['title'] = 'fnord'
         article_kwargs['settings'] = settings
         article = Article(**article_kwargs)
@@ -401,28 +413,168 @@ class TestArticle(TestPage):
         self.assertEqual(article.save_as, 'obrien/csharp-stuff/fnord/index.html')
 
 
-class TestURLWrapper(unittest.TestCase):
-    def test_comparisons(self):
-        # URLWrappers are sorted by name
-        wrapper_a = URLWrapper(name='first', settings={})
-        wrapper_b = URLWrapper(name='last', settings={})
-        self.assertFalse(wrapper_a > wrapper_b)
-        self.assertFalse(wrapper_a >= wrapper_b)
-        self.assertFalse(wrapper_a == wrapper_b)
-        self.assertTrue(wrapper_a != wrapper_b)
-        self.assertTrue(wrapper_a <= wrapper_b)
-        self.assertTrue(wrapper_a < wrapper_b)
-        wrapper_b.name = 'first'
-        self.assertFalse(wrapper_a > wrapper_b)
-        self.assertTrue(wrapper_a >= wrapper_b)
-        self.assertTrue(wrapper_a == wrapper_b)
-        self.assertFalse(wrapper_a != wrapper_b)
-        self.assertTrue(wrapper_a <= wrapper_b)
-        self.assertFalse(wrapper_a < wrapper_b)
-        wrapper_a.name = 'last'
-        self.assertTrue(wrapper_a > wrapper_b)
-        self.assertTrue(wrapper_a >= wrapper_b)
-        self.assertFalse(wrapper_a == wrapper_b)
-        self.assertTrue(wrapper_a != wrapper_b)
-        self.assertFalse(wrapper_a <= wrapper_b)
-        self.assertFalse(wrapper_a < wrapper_b)
+class TestStatic(unittest.TestCase):
+
+    def setUp(self):
+
+        self.settings = get_settings(
+            STATIC_SAVE_AS='{path}',
+            STATIC_URL='{path}',
+            PAGE_SAVE_AS=os.path.join('outpages', '{slug}.html'),
+            PAGE_URL='outpages/{slug}.html')
+        self.context = self.settings.copy()
+
+        self.static = Static(content=None, metadata={}, settings=self.settings,
+            source_path=posix_join('dir', 'foo.jpg'), context=self.context)
+
+        self.context['filenames'] = {self.static.source_path: self.static}
+
+    def tearDown(self):
+        pass
+
+    def test_attach_to_same_dir(self):
+        """attach_to() overrides a static file's save_as and url.
+        """
+        page = Page(content="fake page",
+            metadata={'title': 'fakepage'}, settings=self.settings,
+            source_path=os.path.join('dir', 'fakepage.md'))
+        self.static.attach_to(page)
+
+        expected_save_as = os.path.join('outpages', 'foo.jpg')
+        self.assertEqual(self.static.save_as, expected_save_as)
+        self.assertEqual(self.static.url, path_to_url(expected_save_as))
+
+    def test_attach_to_parent_dir(self):
+        """attach_to() preserves dirs inside the linking document dir.
+        """
+        page = Page(content="fake page", metadata={'title': 'fakepage'},
+            settings=self.settings, source_path='fakepage.md')
+        self.static.attach_to(page)
+
+        expected_save_as = os.path.join('outpages', 'dir', 'foo.jpg')
+        self.assertEqual(self.static.save_as, expected_save_as)
+        self.assertEqual(self.static.url, path_to_url(expected_save_as))
+
+    def test_attach_to_other_dir(self):
+        """attach_to() ignores dirs outside the linking document dir.
+        """
+        page = Page(content="fake page",
+            metadata={'title': 'fakepage'}, settings=self.settings,
+            source_path=os.path.join('dir', 'otherdir', 'fakepage.md'))
+        self.static.attach_to(page)
+
+        expected_save_as = os.path.join('outpages', 'foo.jpg')
+        self.assertEqual(self.static.save_as, expected_save_as)
+        self.assertEqual(self.static.url, path_to_url(expected_save_as))
+
+    def test_attach_to_ignores_subsequent_calls(self):
+        """attach_to() does nothing when called a second time.
+        """
+        page = Page(content="fake page",
+            metadata={'title': 'fakepage'}, settings=self.settings,
+            source_path=os.path.join('dir', 'fakepage.md'))
+
+        self.static.attach_to(page)
+
+        otherdir_settings = self.settings.copy()
+        otherdir_settings.update(dict(
+            PAGE_SAVE_AS=os.path.join('otherpages', '{slug}.html'),
+            PAGE_URL='otherpages/{slug}.html'))
+        otherdir_page = Page(content="other page",
+            metadata={'title': 'otherpage'}, settings=otherdir_settings,
+            source_path=os.path.join('dir', 'otherpage.md'))
+
+        self.static.attach_to(otherdir_page)
+
+        otherdir_save_as = os.path.join('otherpages', 'foo.jpg')
+        self.assertNotEqual(self.static.save_as, otherdir_save_as)
+        self.assertNotEqual(self.static.url, path_to_url(otherdir_save_as))
+
+    def test_attach_to_does_nothing_after_save_as_referenced(self):
+        """attach_to() does nothing if the save_as was already referenced.
+        (For example, by a {filename} link an a document processed earlier.)
+        """
+        original_save_as = self.static.save_as
+
+        page = Page(content="fake page",
+            metadata={'title': 'fakepage'}, settings=self.settings,
+            source_path=os.path.join('dir', 'fakepage.md'))
+        self.static.attach_to(page)
+
+        self.assertEqual(self.static.save_as, original_save_as)
+        self.assertEqual(self.static.url, path_to_url(original_save_as))
+
+    def test_attach_to_does_nothing_after_url_referenced(self):
+        """attach_to() does nothing if the url was already referenced.
+        (For example, by a {filename} link an a document processed earlier.)
+        """
+        original_url = self.static.url
+
+        page = Page(content="fake page",
+            metadata={'title': 'fakepage'}, settings=self.settings,
+            source_path=os.path.join('dir', 'fakepage.md'))
+        self.static.attach_to(page)
+
+        self.assertEqual(self.static.save_as, self.static.source_path)
+        self.assertEqual(self.static.url, original_url)
+
+    def test_attach_to_does_not_override_an_override(self):
+        """attach_to() does not override paths that were overridden elsewhere.
+        (For example, by the user with EXTRA_PATH_METADATA)
+        """
+        customstatic = Static(content=None,
+            metadata=dict(save_as='customfoo.jpg', url='customfoo.jpg'),
+            settings=self.settings,
+            source_path=os.path.join('dir', 'foo.jpg'),
+            context=self.settings.copy())
+
+        page = Page(content="fake page",
+            metadata={'title': 'fakepage'}, settings=self.settings,
+            source_path=os.path.join('dir', 'fakepage.md'))
+
+        customstatic.attach_to(page)
+
+        self.assertEqual(customstatic.save_as, 'customfoo.jpg')
+        self.assertEqual(customstatic.url, 'customfoo.jpg')
+
+    def test_attach_link_syntax(self):
+        """{attach} link syntax triggers output path override & url replacement.
+        """
+        html = '<a href="{attach}../foo.jpg">link</a>'
+        page = Page(content=html,
+            metadata={'title': 'fakepage'}, settings=self.settings,
+            source_path=os.path.join('dir', 'otherdir', 'fakepage.md'),
+            context=self.context)
+        content = page.get_content('')
+
+        self.assertNotEqual(content, html,
+            "{attach} link syntax did not trigger URL replacement.")
+
+        expected_save_as = os.path.join('outpages', 'foo.jpg')
+        self.assertEqual(self.static.save_as, expected_save_as)
+        self.assertEqual(self.static.url, path_to_url(expected_save_as))
+
+    def test_tag_link_syntax(self):
+        "{tag} link syntax triggers url replacement."
+
+        html = '<a href="{tag}foo">link</a>'
+        page = Page(
+            content=html,
+            metadata={'title': 'fakepage'}, settings=self.settings,
+            source_path=os.path.join('dir', 'otherdir', 'fakepage.md'),
+            context=self.context)
+        content = page.get_content('')
+
+        self.assertNotEqual(content, html)
+
+    def test_category_link_syntax(self):
+        "{category} link syntax triggers url replacement."
+
+        html = '<a href="{category}foo">link</a>'
+        page = Page(content=html,
+            metadata={'title': 'fakepage'}, settings=self.settings,
+            source_path=os.path.join('dir', 'otherdir', 'fakepage.md'),
+            context=self.context)
+        content = page.get_content('')
+
+        self.assertNotEqual(content, html)

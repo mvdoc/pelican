@@ -6,6 +6,7 @@ from blinker import signal
 
 initialized = signal('pelican_initialized')
 get_generators = signal('get_generators')
+all_generators_finalized = signal('all_generators_finalized')
 get_writer = signal('get_writer')
 finalized = signal('pelican_finalized')
 
@@ -25,6 +26,7 @@ article_writer_finalized = signal('article_writer_finalized')
 
 page_generator_init = signal('page_generator_init')
 page_generator_finalized = signal('page_generator_finalized')
+page_writer_finalized = signal('page_writer_finalized')
 
 static_generator_init = signal('static_generator_init')
 static_generator_finalized = signal('static_generator_finalized')
@@ -44,3 +46,4 @@ content_object_init = signal('content_object_init')
 
 # Writers signals
 content_written = signal('content_written')
+feed_written = signal('feed_written')

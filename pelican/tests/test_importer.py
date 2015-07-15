@@ -5,11 +5,12 @@ import os
 import re
 
 import locale
+from codecs import open
 from pelican.tools.pelican_import import wp2fields, fields2pelican, decode_wp_content, build_header, build_markdown_header, get_attachments, download_attachments
 from pelican.tests.support import (unittest, temporary_folder, mute,
                                    skipIfNoExecutable)
 
-from pelican.utils import slugify
+from pelican.utils import slugify, path_to_file_url
 
 CUR_DIR = os.path.abspath(os.path.dirname(__file__))
 WORDPRESS_XML_SAMPLE = os.path.join(CUR_DIR, 'content', 'wordpressexport.xml')
@@ -24,6 +25,12 @@ try:
     from bs4 import BeautifulSoup
 except ImportError:
     BeautifulSoup = False  # NOQA
+
+try:
+    import bs4.builder._lxml as LXML
+except ImportError:
+    LXML = False
+
 
 
 @skipIfNoExecutable(['pandoc', '--version'])
@@ -41,7 +48,7 @@ class TestWordpressXmlImporter(unittest.TestCase):
 
     def test_ignore_empty_posts(self):
         self.assertTrue(self.posts)
-        for title, content, fname, date, author, categ, tags, kind, format in self.posts:
+        for title, content, fname, date, author, categ, tags, status, kind, format in self.posts:
             self.assertTrue(title.strip())
 
     def test_recognise_page_kind(self):
@@ -49,7 +56,7 @@ class TestWordpressXmlImporter(unittest.TestCase):
         self.assertTrue(self.posts)
         # Collect (title, filename, kind) of non-empty posts recognised as page
         pages_data = []
-        for title, content, fname, date, author, categ, tags, kind, format in self.posts:
+        for title, content, fname, date, author, categ, tags, status, kind, format in self.posts:
             if kind == 'page':
                 pages_data.append((title, fname))
         self.assertEqual(2, len(pages_data))
@@ -85,7 +92,7 @@ class TestWordpressXmlImporter(unittest.TestCase):
     def test_unless_custom_post_all_items_should_be_pages_or_posts(self):
         self.assertTrue(self.posts)
         pages_data = []
-        for title, content, fname, date, author, categ, tags, kind, format in self.posts:
+        for title, content, fname, date, author, categ, tags, status, kind, format in self.posts:
             if kind == 'page' or kind == 'article':
                 pass
             else:
@@ -95,7 +102,7 @@ class TestWordpressXmlImporter(unittest.TestCase):
     def test_recognise_custom_post_type(self):
         self.assertTrue(self.custposts)
         cust_data = []
-        for title, content, fname, date, author, categ, tags, kind, format in self.custposts:
+        for title, content, fname, date, author, categ, tags, status, kind, format in self.custposts:
             if kind == 'article' or kind == 'page':
                 pass
             else:
@@ -110,7 +117,7 @@ class TestWordpressXmlImporter(unittest.TestCase):
         test_posts = []
         for post in self.custposts:
             # check post kind
-            if post[7] == 'article' or post[7] == 'page':
+            if post[8] == 'article' or post[8] == 'page':
                 pass
             else:
                 test_posts.append(post)
@@ -119,7 +126,7 @@ class TestWordpressXmlImporter(unittest.TestCase):
         index = 0
         for post in test_posts:
             name = post[2]
-            kind = post[7]
+            kind = post[8]
             name += '.md'
             filename = os.path.join(kind, name)
             out_name = fnames[index]
@@ -131,7 +138,7 @@ class TestWordpressXmlImporter(unittest.TestCase):
         test_posts = []
         for post in self.custposts:
             # check post kind
-            if post[7] == 'article' or post[7] == 'page':
+            if post[8] == 'article' or post[8] == 'page':
                 pass
             else:
                 test_posts.append(post)
@@ -141,7 +148,7 @@ class TestWordpressXmlImporter(unittest.TestCase):
         index = 0
         for post in test_posts:
             name = post[2]
-            kind = post[7]
+            kind = post[8]
             category = slugify(post[5][0])
             name += '.md'
             filename = os.path.join(kind, category, name)
@@ -155,7 +162,7 @@ class TestWordpressXmlImporter(unittest.TestCase):
         test_posts = []
         for post in self.custposts:
             # check post kind
-            if post[7] == 'page':
+            if post[8] == 'page':
                 test_posts.append(post)
         with temporary_folder() as temp:
             fnames = list(silent_f2p(test_posts, 'markdown', temp,
@@ -171,7 +178,7 @@ class TestWordpressXmlImporter(unittest.TestCase):
 
     def test_can_toggle_raw_html_code_parsing(self):
         def r(f):
-            with open(f) as infile:
+            with open(f, encoding='utf-8') as infile:
                 return infile.read()
         silent_f2p = mute(True)(fields2pelican)
 
@@ -213,7 +220,7 @@ class TestWordpressXmlImporter(unittest.TestCase):
 
     def test_preserve_verbatim_formatting(self):
         def r(f):
-            with open(f) as infile:
+            with open(f, encoding='utf-8') as infile:
                 return infile.read()
         silent_f2p = mute(True)(fields2pelican)
         test_post = filter(lambda p: p[0].startswith("Code in List"), self.posts)
@@ -228,7 +235,7 @@ class TestWordpressXmlImporter(unittest.TestCase):
 
     def test_code_in_list(self):
         def r(f):
-            with open(f) as infile:
+            with open(f, encoding='utf-8') as infile:
                 return infile.read()
         silent_f2p = mute(True)(fields2pelican)
         test_post = filter(lambda p: p[0].startswith("Code in List"), self.posts)
@@ -244,6 +251,41 @@ class TestBuildHeader(unittest.TestCase):
         header = build_header('test', None, None, None, None, None)
         self.assertEqual(header, 'test\n####\n\n')
 
+    def test_build_header_with_fields(self):
+        header_data = [
+            'Test Post',
+            '2014-11-04',
+            'Alexis Métaireau',
+            ['Programming'],
+            ['Pelican', 'Python'],
+            'test-post',
+        ]
+
+        expected_docutils = '\n'.join([
+            'Test Post',
+            '#########',
+            ':date: 2014-11-04',
+            ':author: Alexis Métaireau',
+            ':category: Programming',
+            ':tags: Pelican, Python',
+            ':slug: test-post',
+            '\n',
+        ])
+
+        expected_md = '\n'.join([
+            'Title: Test Post',
+            'Date: 2014-11-04',
+            'Author: Alexis Métaireau',
+            'Category: Programming',
+            'Tags: Pelican, Python',
+            'Slug: test-post',
+            '\n',
+        ])
+
+        self.assertEqual(build_header(*header_data), expected_docutils)
+        self.assertEqual(build_markdown_header(*header_data), expected_md)
+
+
     def test_build_header_with_east_asian_characters(self):
         header = build_header('これは広い幅の文字だけで構成されたタイトルです',
                 None, None, None, None, None)
@@ -254,17 +296,19 @@ class TestBuildHeader(unittest.TestCase):
 
     def test_galleries_added_to_header(self):
         header = build_header('test', None, None, None, None,
-                None, ['output/test1', 'output/test2'])
+                None, attachments=['output/test1', 'output/test2'])
         self.assertEqual(header, 'test\n####\n' + ':attachments: output/test1, '
                 + 'output/test2\n\n')
 
     def test_galleries_added_to_markdown_header(self):
         header = build_markdown_header('test', None, None, None, None, None,
-            ['output/test1', 'output/test2'])
+            attachments=['output/test1', 'output/test2'])
         self.assertEqual(header, 'Title: test\n' + 'Attachments: output/test1, '
                 + 'output/test2\n\n')
 
+
 @unittest.skipUnless(BeautifulSoup, 'Needs BeautifulSoup module')
+@unittest.skipUnless(LXML, 'Needs lxml module')
 class TestWordpressXMLAttachements(unittest.TestCase):
     def setUp(self):
         self.old_locale = locale.setlocale(locale.LC_ALL)
@@ -293,12 +337,11 @@ class TestWordpressXMLAttachements(unittest.TestCase):
 
     def test_download_attachments(self):
         real_file = os.path.join(CUR_DIR, 'content/article.rst')
-        good_url = 'file://' + real_file
+        good_url = path_to_file_url(real_file)
         bad_url = 'http://localhost:1/not_a_file.txt'
         silent_da = mute()(download_attachments)
         with temporary_folder() as temp:
-            #locations = download_attachments(temp, [good_url, bad_url])
             locations = list(silent_da(temp, [good_url, bad_url]))
-            self.assertTrue(len(locations) == 1)
+            self.assertEqual(1, len(locations))
             directory = locations[0]
-            self.assertTrue(directory.endswith('content/article.rst'))
+            self.assertTrue(directory.endswith(os.path.join('content', 'article.rst')), directory)

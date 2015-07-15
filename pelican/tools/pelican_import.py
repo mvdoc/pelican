@@ -20,8 +20,10 @@ from six.moves.urllib.error import URLError
 from six.moves.urllib.parse import urlparse
 from six.moves.urllib.request import urlretrieve
 
-from pelican.utils import slugify, SafeDatetime
+# pelican.log has to be the first pelican module to be loaded
+# because logging.setLoggerClass has to be called before logging.getLogger
 from pelican.log import init
+from pelican.utils import slugify, SafeDatetime
 
 logger = logging.getLogger(__name__)
 
@@ -99,12 +101,12 @@ def decode_wp_content(content, br=True):
     return content
 
 def get_items(xml):
-    """Opens a wordpress xml file and returns a list of items"""
+    """Opens a WordPress xml file and returns a list of items"""
     try:
         from bs4 import BeautifulSoup
     except ImportError:
         error = ('Missing dependency '
-                 '"BeautifulSoup4" and "lxml" required to import Wordpress XML files.')
+                 '"BeautifulSoup4" and "lxml" required to import WordPress XML files.')
         sys.exit(error)
     with open(xml, encoding='utf-8') as infile:
         xmlfile = infile.read()
@@ -124,14 +126,14 @@ def wp2fields(xml, wp_custpost=False):
     items = get_items(xml)
     for item in items:
 
-        if item.find('status').string == "publish":
+        if item.find('status').string in ["publish", "draft"]:
 
             try:
                 # Use HTMLParser due to issues with BeautifulSoup 3
                 title = unescape(item.title.contents[0])
             except IndexError:
                 title = 'No title [%s]' % item.find('post_name').string
-                logger.warning('Post "%s" is lacking a proper title' % title)
+                logger.warning('Post "%s" is lacking a proper title', title)
 
             filename = item.find('post_name').string
             post_id = item.find('post_id').string
@@ -147,6 +149,8 @@ def wp2fields(xml, wp_custpost=False):
             # caturl = [cat['nicename'] for cat in item.find(domain='category')]
 
             tags = [tag.string for tag in item.findAll('category', {'domain' : 'post_tag'})]
+            # To publish a post the status should be 'published'
+            status = 'published' if item.find('status').string == "publish" else item.find('status').string
 
             kind = 'article'
             post_type = item.find('post_type').string
@@ -163,7 +167,7 @@ def wp2fields(xml, wp_custpost=False):
                     pass
                 else:
                     kind = post_type
-            yield (title, content, filename, date, author, categories, tags,
+            yield (title, content, filename, date, author, categories, tags, status,
                    kind, "wp-html")
 
 def dc2fields(file):
@@ -294,9 +298,10 @@ def dc2fields(file):
             post_format = "html"
 
         kind = 'article'  # TODO: Recognise pages
+        status = 'published'  # TODO: Find a way for draft posts
 
         yield (post_title, content, slugify(post_title), post_creadt, author,
-               categories, tags, kind, post_format)
+               categories, tags, status, kind, post_format)
 
 
 def posterous2fields(api_token, email, password):
@@ -345,9 +350,10 @@ def posterous2fields(api_token, email, password):
             date_object -= delta
             date = date_object.strftime("%Y-%m-%d %H:%M")
             kind = 'article'  # TODO: Recognise pages
+            status = 'published'  # TODO: Find a way for draft posts
 
             yield (post.get('title'), post.get('body_cleaned'), slug, date,
-                post.get('user').get('display_name'), [], tags, kind, "html")
+                post.get('user').get('display_name'), [], tags, status, kind, "html")
 
 
 def tumblr2fields(api_key, blogname):
@@ -424,8 +430,10 @@ def tumblr2fields(api_key, blogname):
 
             content = content.rstrip() + '\n'
             kind = 'article'
+            status = 'published'  # TODO: Find a way for draft posts
+
             yield (title, content, slug, date, post.get('blog_name'), [type],
-                   tags, kind, format)
+                   tags, status, kind, format)
 
         offset += len(posts)
         posts = get_tumblr_posts(api_key, blogname, offset)
@@ -442,10 +450,10 @@ def feed2fields(file):
 
         slug = slugify(entry.title)
         kind = 'article'
-        yield (entry.title, entry.description, slug, date, author, [], tags,
+        yield (entry.title, entry.description, slug, date, author, [], tags, None,
                kind, "html")
 
-def build_header(title, date, author, categories, tags, slug, attachments=None):
+def build_header(title, date, author, categories, tags, slug, status=None, attachments=None):
     from docutils.utils import column_width
 
     """Build a header from a list of fields"""
@@ -460,13 +468,15 @@ def build_header(title, date, author, categories, tags, slug, attachments=None):
         header += ':tags: %s\n' % ', '.join(tags)
     if slug:
         header += ':slug: %s\n' % slug
+    if status:
+        header += ':status: %s\n' % status
     if attachments:
         header += ':attachments: %s\n' % ', '.join(attachments)
     header += '\n'
     return header
 
-def build_markdown_header(title, date, author, categories, tags, slug,
-        attachments=None):
+def build_markdown_header(title, date, author, categories, tags, slug, status=None,
+    attachments=None):
     """Build a header from a list of fields"""
     header = 'Title: %s\n' % title
     if date:
@@ -479,6 +489,8 @@ def build_markdown_header(title, date, author, categories, tags, slug,
         header += 'Tags: %s\n' % ', '.join(tags)
     if slug:
         header += 'Slug: %s\n' % slug
+    if status:
+        header += 'Status: %s\n' % status
     if attachments:
         header += 'Attachments: %s\n' % ', '.join(attachments)
     header += '\n'
@@ -574,7 +586,7 @@ def get_attachments(xml):
     return attachedposts
 
 def download_attachments(output_path, urls):
-    """Downloads wordpress attachments and returns a list of paths to
+    """Downloads WordPress attachments and returns a list of paths to
     attachments that can be associated with a post (relative path to output
     directory). Files that fail to download, will not be added to posts"""
     locations = []
@@ -586,7 +598,8 @@ def download_attachments(output_path, urls):
         filename = path.pop(-1)
         localpath = ''
         for item in path:
-            localpath = os.path.join(localpath, item)
+            if sys.platform != 'win32' or ':' not in item:
+                localpath = os.path.join(localpath, item)
         full_path = os.path.join(output_path, localpath)
         if not os.path.exists(full_path):
             os.makedirs(full_path)
@@ -594,24 +607,9 @@ def download_attachments(output_path, urls):
         try:
             urlretrieve(url, os.path.join(full_path, filename))
             locations.append(os.path.join(localpath, filename))
-        except URLError as e:
-            error = ("No file could be downloaded from {}; Error {}"
-                    .format(url, e))
-            logger.warning(error)
-        except IOError as e: #Python 2.7 throws an IOError rather Than URLError
-            # For japanese, the error might look kind of like this:
-            # e = IOError( 'socket error', socket.error(111, u'\u63a5\u7d9a\u3092\u62d2\u5426\u3055\u308c\u307e\u3057\u305f') )
-            # and not be suitable to use in "{}".format(e) , raising UnicodeDecodeError
-            # (This is at least the case on my Fedora running Python 2.7.5 
-            # (default, Feb 19 2014, 13:47:28) [GCC 4.8.2 20131212 (Red Hat 4.8.2-7)] on linux2
-            try:
-                error = ("No file could be downloaded from {}; Error {}"
-                        .format(url, e))
-            except UnicodeDecodeError:
-                # For lack of a better log message because we could not decode e, let's use repr(e)
-                error = ("No file could be downloaded from {}; Error {}"
-                        .format(url, repr(e)))
-            logger.warning(error)
+        except (URLError, IOError) as e:
+            #Python 2.7 throws an IOError rather Than URLError
+            logger.warning("No file could be downloaded from %s\n%s", url, e)
     return locations
 
 
@@ -619,7 +617,7 @@ def fields2pelican(fields, out_markup, output_path,
         dircat=False, strip_raw=False, disable_slugs=False,
         dirpage=False, filename_template=None, filter_author=None,
         wp_custpost=False, wp_attach=False, attachments=None):
-    for (title, content, filename, date, author, categories, tags,
+    for (title, content, filename, date, author, categories, tags, status,
             kind, in_markup) in fields:
         if filter_author and filter_author != author:
             continue
@@ -637,11 +635,11 @@ def fields2pelican(fields, out_markup, output_path,
         ext = get_ext(out_markup, in_markup)
         if ext == '.md':
             header = build_markdown_header(title, date, author, categories,
-                    tags, slug, attached_files)
+                    tags, slug, status, attached_files)
         else:
             out_markup = "rst"
             header = build_header(title, date, author, categories,
-                    tags, slug, attached_files)
+                    tags, slug, status, attached_files)
 
         out_filename = get_out_filename(output_path, filename, ext,
                 kind, dirpage, dircat, categories, wp_custpost)

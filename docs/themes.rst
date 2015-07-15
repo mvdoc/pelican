@@ -16,6 +16,7 @@ then modified), you can specify that theme via the ``-t`` flag::
 If you'd rather not specify the theme on every invocation, you can define
 ``THEME`` in your settings to point to the location of your preferred theme.
 
+
 Structure
 =========
 
@@ -32,7 +33,7 @@ To make your own theme, you must follow the following structure::
         ├── authors.html          // must list all the authors
         ├── categories.html       // must list all the categories
         ├── category.html         // processed for each category
-        ├── index.html            // the index. List all the articles
+        ├── index.html            // the index (list all the articles)
         ├── page.html             // processed for each page
         ├── tag.html              // processed for each tag
         └── tags.html             // must list all the tags. Can be a tag cloud.
@@ -45,6 +46,7 @@ To make your own theme, you must follow the following structure::
   The template files listed above are mandatory; you can add your own templates
   if it helps you keep things organized while creating your theme.
 
+
 Templates and variables
 =======================
 
@@ -55,6 +57,7 @@ variables will be passed to each template at generation time.
 All templates will receive the variables defined in your settings file, as long
 as they are in all-caps. You can access them directly.
 
+
 Common variables
 ----------------
 
@@ -64,7 +67,7 @@ All of these settings will be available to all templates.
 Variable        Description
 =============   ===================================================
 output_file     The name of the file currently being generated. For
-                instance, when Pelican is rendering the homepage,
+                instance, when Pelican is rendering the home page,
                 output_file will be "index.html".
 articles        The list of articles, ordered descending by date.
                 All the elements are `Article` objects, so you can
@@ -74,12 +77,15 @@ articles        The list of articles, ordered descending by date.
                 in the `all_articles` variable.
 dates           The same list of articles, but ordered by date,
                 ascending.
+drafts          The list of draft articles
 tags            A list of (tag, articles) tuples, containing all
                 the tags.
 categories      A list of (category, articles) tuples, containing
                 all the categories and corresponding articles (values)
 pages           The list of pages
+hidden_pages    The list of hidden pages
 =============   ===================================================
+
 
 Sorting
 -------
@@ -112,12 +118,13 @@ to the locale given in your settings::
 .. _datetime: http://docs.python.org/2/library/datetime.html#datetime-objects
 .. _strftime: http://docs.python.org/2/library/datetime.html#strftime-strptime-behavior
 
+
 index.html
 ----------
 
-This is the home page of your blog, generated at output/index.html.
+This is the home page or index of your blog, generated at ``index.html``.
 
-If pagination is active, subsequent pages will reside in output/index`n`.html.
+If pagination is active, subsequent pages will reside in ``index{number}.html``.
 
 ======================  ===================================================
 Variable                Description
@@ -139,14 +146,14 @@ dates_next_page         The next page of articles, ordered by date,
 page_name               'index' -- useful for pagination links
 ======================  ===================================================
 
+
 author.html
 -------------
 
 This template will be processed for each of the existing authors, with
-output generated at output/author/`author_name`.html.
-
-If pagination is active, subsequent pages will reside as defined by setting
-AUTHOR_SAVE_AS (`Default:` output/author/`author_name'n'`.html).
+output generated according to the ``AUTHOR_SAVE_AS`` setting (`Default:`
+``author/{author_name}.html``). If pagination is active, subsequent pages will by
+default reside at ``author/{author_name}{number}.html``.
 
 ======================  ===================================================
 Variable                Description
@@ -173,14 +180,14 @@ page_name               AUTHOR_URL where everything after `{slug}` is
                         removed -- useful for pagination links
 ======================  ===================================================
 
+
 category.html
 -------------
 
 This template will be processed for each of the existing categories, with
-output generated at output/category/`category_name`.html.
-
-If pagination is active, subsequent pages will reside as defined by setting
-CATEGORY_SAVE_AS (`Default:` output/category/`category_name'n'`.html).
+output generated according to the ``CATEGORY_SAVE_AS`` setting (`Default:`
+``category/{category_name}.html``). If pagination is active, subsequent pages will by
+default reside at ``category/{category_name}{number}.html``.
 
 ======================  ===================================================
 Variable                Description
@@ -207,11 +214,14 @@ page_name               CATEGORY_URL where everything after `{slug}` is
                         removed -- useful for pagination links
 ======================  ===================================================
 
+
 article.html
 -------------
 
-This template will be processed for each article, with .html files saved
-as output/`article_name`.html. Here are the specific variables it gets.
+This template will be processed for each article, with
+output generated according to the ``ARTICLE_SAVE_AS`` setting (`Default:`
+``{article_name}.html``). The following variables are available when
+rendering.
 
 =============   ===================================================
 Variable        Description
@@ -249,8 +259,10 @@ image for the Facebook open graph tags that will change for each article:
 page.html
 ---------
 
-This template will be processed for each page, with corresponding .html files
-saved as output/`page_name`.html.
+This template will be processed for each page, with
+output generated according to the ``PAGE_SAVE_AS`` setting (`Default:`
+``pages/{page_name}.html``). The following variables are available when
+rendering.
 
 =============   ===================================================
 Variable        Description
@@ -259,14 +271,14 @@ page            The page object to be displayed. You can access its
                 title, slug, and content.
 =============   ===================================================
 
+
 tag.html
 --------
 
-This template will be processed for each tag, with corresponding .html files
-saved as output/tag/`tag_name`.html.
-
-If pagination is active, subsequent pages will reside as defined in setting
-TAG_SAVE_AS (`Default:` output/tag/`tag_name'n'`.html).
+This template will be processed for each tag, with
+output generated according to the ``TAG_SAVE_AS`` setting (`Default:`
+``tag/{tag_name}.html``). If pagination is active, subsequent pages will by
+default reside at ``tag/{tag_name}{number}.html``.
 
 ======================  ===================================================
 Variable                Description
@@ -293,12 +305,13 @@ page_name               TAG_URL where everything after `{slug}` is removed
                         -- useful for pagination links
 ======================  ===================================================
 
+
 period_archives.html
 --------------------
 
 This template will be processed for each year of your posts if a path
-for YEAR_ARCHIVE_SAVE_AS is defined, each month if MONTH_ARCHIVE_SAVE_AS
-is defined and each day if DAY_ARCHIVE_SAVE_AS is defined.
+for ``YEAR_ARCHIVE_SAVE_AS`` is defined, each month if ``MONTH_ARCHIVE_SAVE_AS``
+is defined, and each day if ``DAY_ARCHIVE_SAVE_AS`` is defined.
 
 ===================     ===================================================
 Variable                Description
@@ -313,8 +326,112 @@ period                  A tuple of the form (`year`, `month`, `day`) that
 
 ===================     ===================================================
 
-You can see an example of how to use `period` in the ``simple`` theme's
-period_archives.html
+You can see an example of how to use `period` in the `"simple" theme
+period_archives.html template
+<https://github.com/getpelican/pelican/blob/master/pelican/themes/simple/templates/period_archives.html>`_.
+
+
+Objects
+=======
+
+Detail objects attributes that are available and useful in templates. Not all
+attributes are listed here, this is a selection of attributes considered useful
+in a template.
+
+.. _object-article:
+
+Article
+-------
+
+The string representation of an Article is the `source_path` attribute.
+
+===================     ===================================================
+Attribute               Description
+===================     ===================================================
+author                  The :ref:`Author <object-author_cat_tag>` of
+                        this article.
+authors                 A list of :ref:`Authors <object-author_cat_tag>`
+                        of this article.
+category                The :ref:`Category <object-author_cat_tag>`
+                        of this article.
+content                 The rendered content of the article.
+date                    Datetime object representing the article date.
+date_format             Either default date format or locale date format.
+default_template        Default template name.
+in_default_lang         Boolean representing if the article is written
+                        in the default language.
+lang                    Language of the article.
+locale_date             Date formatted by the `date_format`.
+metadata                Article header metadata `dict`.
+save_as                 Location to save the article page.
+slug                    Page slug.
+source_path             Full system path of the article source file.
+status                  The article status, can be any of 'published' or
+                        'draft'.
+summary                 Rendered summary content.
+tags                    List of :ref:`Tag <object-author_cat_tag>`
+                        objects.
+template                Template name to use for rendering.
+title                   Title of the article.
+translations            List of translations
+                        :ref:`Article <object-article>` objects.
+url                     URL to the article page.
+===================     ===================================================
+
+.. _object-author_cat_tag:
+
+Author / Category / Tag
+-----------------------
+
+The string representation of those objects is the `name` attribute.
+
+===================     ===================================================
+Attribute               Description
+===================     ===================================================
+name                    Name of this object [1]_.
+page_name               Author page name.
+save_as                 Location to save the author page.
+slug                    Page slug.
+url                     URL to the author page.
+===================     ===================================================
+
+.. [1] for Author object, coming from `:authors:` or `AUTHOR`.
+
+.. _object-page:
+
+Page
+----
+
+The string representation of a Page is the `source_path` attribute.
+
+===================     ===================================================
+Attribute               Description
+===================     ===================================================
+author                  The :ref:`Author <object-author_cat_tag>` of
+                        this page.
+content                 The rendered content of the page.
+date                    Datetime object representing the page date.
+date_format             Either default date format or locale date format.
+default_template        Default template name.
+in_default_lang         Boolean representing if the article is written
+                        in the default language.
+lang                    Language of the article.
+locale_date             Date formatted by the `date_format`.
+metadata                Page header metadata `dict`.
+save_as                 Location to save the page.
+slug                    Page slug.
+source_path             Full system path of the page source file.
+status                  The page status, can be any of 'published' or
+                        'draft'.
+summary                 Rendered summary content.
+tags                    List of :ref:`Tag <object-author_cat_tag>`
+                        objects.
+template                Template name to use for rendering.
+title                   Title of the page.
+translations            List of translations
+                        :ref:`Article <object-article>` objects.
+url                     URL to the page.
+===================     ===================================================
 
 Feeds
 =====
@@ -329,6 +446,8 @@ Here is a complete list of the feed variables::
     FEED_ALL_RSS
     CATEGORY_FEED_ATOM
     CATEGORY_FEED_RSS
+    AUTHOR_FEED_ATOM
+    AUTHOR_FEED_RSS
     TAG_FEED_ATOM
     TAG_FEED_RSS
     TRANSLATION_FEED_ATOM
@@ -346,7 +465,7 @@ missing, it will be replaced by the matching template from the ``simple`` theme.
 So if the HTML structure of a template in the ``simple`` theme is right for you,
 you don't have to write a new template from scratch.
 
-You can also extend templates from the ``simple`` themes in your own themes by
+You can also extend templates from the ``simple`` theme in your own themes by
 using the ``{% extends %}`` directive as in the following example:
 
 .. code-block:: html+jinja

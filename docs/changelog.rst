@@ -1,6 +1,59 @@
 Release history
 ###############
 
+Next release
+============
+
+- Nothing yet
+
+3.6.0 (2015-06-15)
+==================
+
+* Disable caching by default in order to prevent potential confusion
+* Improve caching behavior, replacing ``pickle`` with ``cpickle``
+* Allow Markdown or reST content in metadata fields other than ``summary``
+* Support semicolon-separated author/tag lists
+* Improve flexibility of article sorting
+* Add ``--relative-urls`` argument
+* Support devserver listening on addresses other than localhost
+* Unify HTTP server handlers to ``pelican.server`` throughout
+* Handle intra-site links to draft posts
+* Move ``tag_cloud`` from core to plugin
+* Load default theme's external resources via HTTPS
+* Import drafts from WordPress XML
+* Improve support for Windows users
+* Enhance logging and test suite
+* Clean up and refactor codebase
+* New signals: ``all_generators_finalized`` and ``page_writer_finalized``
+
+3.5.0 (2014-11-04)
+==================
+
+* Introduce ``ARTICLE_ORDER_BY`` and ``PAGE_ORDER_BY`` settings to control the
+  order of articles and pages.
+* Include time zone information in dates rendered in templates.
+* Expose the reader name in the metadata for articles and pages.
+* Add the ability to store static files along with content in the same
+  directory as articles and pages using ``{attach}`` in the path.
+* Prevent Pelican from raising an exception when there are duplicate pieces of
+  metadata in a Markdown file.
+* Introduce the ``TYPOGRIFY_IGNORE_TAGS`` setting to add HTML tags to be ignored
+  by Typogrify.
+* Add the ability to use ``-`` in date formats to strip leading zeros. For
+  example, ``%-d/%-m/%y`` will now result in the date ``9/8/12``.
+* Ensure feed generation is correctly disabled during quickstart configuration.
+* Fix ``PAGE_EXCLUDES`` and ``ARTICLE_EXCLUDES`` from incorrectly matching
+  sub-directories.
+* Introduce ``STATIC_EXCLUDE`` setting to add static file excludes.
+* Fix an issue when using ``PAGINATION_PATTERNS`` while ``RELATIVE_URLS``
+  is enabled.
+* Fix feed generation causing links to use the wrong language for month
+  names when using other locales.
+* Fix an issue where the authors list in the simple template wasn't correctly
+  formatted.
+* Fix an issue when parsing non-string URLs from settings.
+* Improve consistency of debug and warning messages.
+
 3.4.0 (2014-07-01)
 ==================
 
@@ -177,7 +230,7 @@ Release history
 2.5 (2010-11-20)
 ==================
 
-* Import from Wordpress
+* Import from WordPress
 * Added some new themes (martyalchin / wide-notmyidea)
 * First bug report!
 * Linkedin support

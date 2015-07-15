@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, print_function
 import six
-from six.moves.urllib.parse import (unquote, urlparse, urlunparse)
+from six.moves.urllib.parse import urlparse, urlunparse
 
 import copy
 import locale
@@ -11,12 +11,13 @@ import os
 import re
 import sys
 
+import pytz
 
 from pelican import signals
 from pelican.settings import DEFAULT_CONFIG
 from pelican.utils import (slugify, truncate_html_words, memoized, strftime,
                            python_2_unicode_compatible, deprecated_attribute,
-                           path_to_url, SafeDatetime)
+                           path_to_url, posixize_path, set_date_tzinfo, SafeDatetime)
 
 # Import these so that they're avalaible when you import from pelican.contents.
 from pelican.urlwrappers import (URLWrapper, Author, Category, Tag)  # NOQA
@@ -24,6 +25,7 @@ from pelican.urlwrappers import (URLWrapper, Author, Category, Tag)  # NOQA
 logger = logging.getLogger(__name__)
 
 
+@python_2_unicode_compatible
 class Content(object):
     """Represents a content.
 
@@ -52,7 +54,7 @@ class Content(object):
         self._context = context
         self.translations = []
 
-        local_metadata = dict(settings['DEFAULT_METADATA'])
+        local_metadata = dict()
         local_metadata.update(metadata)
 
         # set metadata as attributes
@@ -89,7 +91,7 @@ class Content(object):
 
             self.in_default_lang = (self.lang == default_lang)
 
-        # create the slug if not existing, generate slug according to 
+        # create the slug if not existing, generate slug according to
         # setting of SLUG_ATTRIBUTE
         if not hasattr(self, 'slug'):
             if settings['SLUGIFY_SOURCE'] == 'title' and hasattr(self, 'title'):
@@ -117,16 +119,27 @@ class Content(object):
             locale.setlocale(locale.LC_ALL, locale_string)
             self.date_format = self.date_format[1]
 
+        # manage timezone
+        default_timezone = settings.get('TIMEZONE', 'UTC')
+        timezone = getattr(self, 'timezone', default_timezone)
+
         if hasattr(self, 'date'):
+            self.date = set_date_tzinfo(self.date, timezone)
             self.locale_date = strftime(self.date, self.date_format)
+
         if hasattr(self, 'modified'):
+            self.modified = set_date_tzinfo(self.modified, timezone)
             self.locale_modified = strftime(self.modified, self.date_format)
 
         # manage status
         if not hasattr(self, 'status'):
             self.status = settings['DEFAULT_STATUS']
-            if not settings['WITH_FUTURE_DATES']:
-                if hasattr(self, 'date') and self.date > SafeDatetime.now():
+            if not settings['WITH_FUTURE_DATES'] and hasattr(self, 'date'):
+                if self.date.tzinfo is None:
+                    now = SafeDatetime.now()
+                else:
+                    now = SafeDatetime.utcnow().replace(tzinfo=pytz.utc)
+                if self.date > now:
                     self.status = 'draft'
 
         # store the summary metadata if it is set
@@ -136,12 +149,7 @@ class Content(object):
         signals.content_object_init.send(self)
 
     def __str__(self):
-        if self.source_path is None:
-            return repr(self)
-        elif six.PY3:
-            return self.source_path or repr(self)
-        else:
-            return str(self.source_path.encode('utf-8', 'replace'))
+        return self.source_path or repr(self)
 
     def check_properties(self):
         """Test mandatory properties are set."""
@@ -154,21 +162,13 @@ class Content(object):
         """Returns the URL, formatted with the proper values"""
         metadata = copy.copy(self.metadata)
         path = self.metadata.get('path', self.get_relative_source_path())
-        default_category = self.settings['DEFAULT_CATEGORY']
-        slug_substitutions = self.settings.get('SLUG_SUBSTITUTIONS', ())
         metadata.update({
             'path': path_to_url(path),
             'slug': getattr(self, 'slug', ''),
             'lang': getattr(self, 'lang', 'en'),
             'date': getattr(self, 'date', SafeDatetime.now()),
-            'author': slugify(
-                getattr(self, 'author', ''),
-                slug_substitutions
-            ),
-            'category': slugify(
-                getattr(self, 'category', default_category),
-                slug_substitutions
-            )
+            'author': self.author.slug if hasattr(self, 'author') else '',
+            'category': self.category.slug if hasattr(self, 'category') else ''
         })
         return metadata
 
@@ -186,7 +186,7 @@ class Content(object):
         """Update the content attribute.
 
         Change all the relative paths of the content to relative paths
-        suitable for the ouput content.
+        suitable for the output content.
 
         :param content: content resource that will be passed to the templates.
         :param siteurl: siteurl which is locally generated by the writer in
@@ -212,7 +212,7 @@ class Content(object):
             origin = m.group('path')
 
             # XXX Put this in a different location.
-            if what == 'filename':
+            if what in {'filename', 'attach'}:
                 if path.startswith('/'):
                     path = path[1:]
                 else:
@@ -227,19 +227,27 @@ class Content(object):
                     if unquoted_path in self._context['filenames']:
                         path = unquoted_path
 
-                if path in self._context['filenames']:
-                    origin = '/'.join((siteurl,
-                             self._context['filenames'][path].url))
+                linked_content = self._context['filenames'].get(path)
+                if linked_content:
+                    if what == 'attach':
+                        if isinstance(linked_content, Static):
+                            linked_content.attach_to(self)
+                        else:
+                            logger.warning("%s used {attach} link syntax on a "
+                                "non-static file. Use {filename} instead.",
+                                self.get_relative_source_path())
+                    origin = '/'.join((siteurl, linked_content.url))
                     origin = origin.replace('\\', '/')  # for Windows paths.
                 else:
-                    logger.warning(("Unable to find {fn}, skipping url"
-                                    " replacement".format(fn=value),
-                                    "Other resources were not found"
-                                    " and their urls not replaced"))
+                    logger.warning(
+                        "Unable to find `%s`, skipping url replacement.",
+                        value.geturl(), extra = {
+                            'limit_msg': ("Other resources were not found "
+                                          "and their urls not replaced")})
             elif what == 'category':
-                origin = Category(path, self.settings).url
+                origin = '/'.join((siteurl, Category(path, self.settings).url))
             elif what == 'tag':
-                origin = Tag(path, self.settings).url
+                origin = '/'.join((siteurl, Tag(path, self.settings).url))
 
             # keep all other parts, such as query, fragment, etc.
             parts = list(value)
@@ -253,16 +261,18 @@ class Content(object):
 
     @memoized
     def get_content(self, siteurl):
-
         if hasattr(self, '_get_content'):
             content = self._get_content()
         else:
             content = self._content
         return self._update_content(content, siteurl)
 
+    def get_siteurl(self):
+        return self._context.get('localsiteurl', '')
+
     @property
     def content(self):
-        return self.get_content(self._context.get('localsiteurl', ''))
+        return self.get_content(self.get_siteurl())
 
     def _get_summary(self):
         """Returns the summary of an article.
@@ -271,7 +281,8 @@ class Content(object):
         content.
         """
         if hasattr(self, '_summary'):
-            return self._summary
+            return self._update_content(self._summary,
+                                        self.get_siteurl())
 
         if self.settings['SUMMARY_MAX_LENGTH'] is None:
             return self.content
@@ -279,14 +290,27 @@ class Content(object):
         return truncate_html_words(self.content,
                                    self.settings['SUMMARY_MAX_LENGTH'])
 
-    def _set_summary(self, summary):
+    @memoized
+    def get_summary(self, siteurl):
+        """uses siteurl to be memoizable"""
+        return self._get_summary()
+
+    @property
+    def summary(self):
+        return self.get_summary(self.get_siteurl())
+
+    @summary.setter
+    def summary(self, value):
         """Dummy function"""
         pass
 
-    summary = property(_get_summary, _set_summary, "Summary of the article."
-                       "Based on the content. Can't be set")
-    url = property(functools.partial(get_url_setting, key='url'))
-    save_as = property(functools.partial(get_url_setting, key='save_as'))
+    @property
+    def url(self):
+        return self.get_url_setting('url')
+
+    @property
+    def save_as(self):
+        return self.get_url_setting('save_as')
 
     def _get_template(self):
         if hasattr(self, 'template') and self.template is not None:
@@ -306,17 +330,19 @@ class Content(object):
         if source_path is None:
             return None
 
-        return os.path.relpath(
-            os.path.abspath(os.path.join(self.settings['PATH'], source_path)),
-            os.path.abspath(self.settings['PATH'])
-        )
+        return posixize_path(
+            os.path.relpath(
+                os.path.abspath(os.path.join(self.settings['PATH'], source_path)),
+                os.path.abspath(self.settings['PATH'])
+            ))
 
     @property
     def relative_dir(self):
-        return os.path.dirname(os.path.relpath(
-            os.path.abspath(self.source_path),
-            os.path.abspath(self.settings['PATH']))
-        )
+        return posixize_path(
+            os.path.dirname(
+                os.path.relpath(
+                    os.path.abspath(self.source_path),
+                    os.path.abspath(self.settings['PATH']))))
 
 
 class Page(Content):
@@ -340,6 +366,10 @@ class Quote(Page):
 
 @python_2_unicode_compatible
 class Static(Page):
+    def __init__(self, *args, **kwargs):
+        super(Static, self).__init__(*args, **kwargs)
+        self._output_location_referenced = False
+
     @deprecated_attribute(old='filepath', new='source_path', since=(3, 2, 0))
     def filepath():
         return None
@@ -352,12 +382,70 @@ class Static(Page):
     def dst():
         return None
 
+    @property
+    def url(self):
+        # Note when url has been referenced, so we can avoid overriding it.
+        self._output_location_referenced = True
+        return super(Static, self).url
+
+    @property
+    def save_as(self):
+        # Note when save_as has been referenced, so we can avoid overriding it.
+        self._output_location_referenced = True
+        return super(Static, self).save_as
+
+    def attach_to(self, content):
+        """Override our output directory with that of the given content object.
+        """
+        # Determine our file's new output path relative to the linking document.
+        # If it currently lives beneath the linking document's source directory,
+        # preserve that relationship on output. Otherwise, make it a sibling.
+        linking_source_dir = os.path.dirname(content.source_path)
+        tail_path = os.path.relpath(self.source_path, linking_source_dir)
+        if tail_path.startswith(os.pardir + os.sep):
+            tail_path = os.path.basename(tail_path)
+        new_save_as = os.path.join(
+            os.path.dirname(content.save_as), tail_path)
+
+        # We do not build our new url by joining tail_path with the linking
+        # document's url, because we cannot know just by looking at the latter
+        # whether it points to the document itself or to its parent directory.
+        # (An url like 'some/content' might mean a directory named 'some'
+        # with a file named 'content', or it might mean a directory named
+        # 'some/content' with a file named 'index.html'.) Rather than trying
+        # to figure it out by comparing the linking document's url and save_as
+        # path, we simply build our new url from our new save_as path.
+        new_url = path_to_url(new_save_as)
+
+        def _log_reason(reason):
+            logger.warning("The {attach} link in %s cannot relocate %s "
+                "because %s. Falling back to {filename} link behavior instead.",
+                content.get_relative_source_path(),
+                self.get_relative_source_path(), reason,
+                extra={'limit_msg': "More {attach} warnings silenced."})
+
+        # We never override an override, because we don't want to interfere
+        # with user-defined overrides that might be in EXTRA_PATH_METADATA.
+        if hasattr(self, 'override_save_as') or hasattr(self, 'override_url'):
+            if new_save_as != self.save_as or new_url != self.url:
+                _log_reason("its output location was already overridden")
+            return
+
+        # We never change an output path that has already been referenced,
+        # because we don't want to break links that depend on that path.
+        if self._output_location_referenced:
+            if new_save_as != self.save_as or new_url != self.url:
+                _log_reason("another link already referenced its location")
+            return
+
+        self.override_save_as = new_save_as
+        self.override_url = new_url
+
 
 def is_valid_content(content, f):
     try:
         content.check_properties()
         return True
     except NameError as e:
-        logger.error("Skipping %s: could not find information about "
-                     "'%s'" % (f, e))
+        logger.error("Skipping %s: could not find information about '%s'", f, e)
         return False

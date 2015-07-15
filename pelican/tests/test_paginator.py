@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, absolute_import
-import six
 import locale
 
 from pelican.tests.support import unittest, get_settings
 
 from pelican.paginator import Paginator
-from pelican.contents import Article
+from pelican.contents import Article, Author
 from pelican.settings import DEFAULT_CONFIG
 from jinja2.utils import generate_lorem_ipsum
 
@@ -27,7 +26,6 @@ class TestPage(unittest.TestCase):
             'metadata': {
                 'summary': TEST_SUMMARY,
                 'title': 'foo bar',
-                'author': 'Blogger',
             },
             'source_path': '/path/to/file/foo.ext'
         }
@@ -50,6 +48,7 @@ class TestPage(unittest.TestCase):
             key=lambda r: r[0],
         )
 
+        self.page_kwargs['metadata']['author'] = Author('Blogger', settings)
         object_list = [Article(**self.page_kwargs), Article(**self.page_kwargs)]
         paginator = Paginator('foobar.foo', object_list, settings)
         page = paginator.page(1)

@@ -20,6 +20,14 @@ Alternatively, another method is to import them and add them to the list::
     from package import myplugin
     PLUGINS = [myplugin,]
 
+.. note::
+
+   When experimenting with different plugins (especially the ones that
+   deal with metadata and content) caching may interfere and the
+   changes may not be visible. In such cases disable caching with
+   ``LOAD_CONTENT_CACHE = False`` or use the ``--ignore-cache``
+   command-line switch.
+
 If your plugins are not in an importable path, you can specify a list of paths
 via the ``PLUGIN_PATHS`` setting. As shown in the following example, paths in
 the ``PLUGIN_PATHS`` list can be absolute or relative to the settings file::
@@ -57,6 +65,12 @@ which you map the signals to your plugin logic. Let's take a simple example::
     def register():
         signals.initialized.connect(test)
 
+.. note::
+
+    Signal receivers are weakly-referenced and thus must not be defined within
+    your ``register`` callable or they will be garbage-collected before the
+    signal is emitted.
+
 List of signals
 ===============
 
@@ -67,10 +81,11 @@ Signal                              Arguments                       Description
 =================================   ============================   ===========================================================================
 initialized                         pelican object
 finalized                           pelican object                 invoked after all the generators are executed and just before pelican exits
-                                                                   usefull for custom post processing actions, such as:
+                                                                   useful for custom post processing actions, such as:
                                                                    - minifying js/css assets.
                                                                    - notify/ping search engines with an updated sitemap.
 generator_init                      generator                      invoked in the Generator.__init__
+all_generators_finalized            generators                     invoked after all the generators are executed and before writing output
 readers_init                        readers                        invoked in the Readers.__init__
 article_generator_context           article_generator, metadata
 article_generator_preread           article_generator              invoked before a article is read in ArticlesGenerator.generate_context;
@@ -93,35 +108,27 @@ page_generator_preread              page_generator                 invoked befor
                                                                    use if code needs to do something before every page is parsed.
 page_generator_init                 page_generator                 invoked in the PagesGenerator.__init__
 page_generator_finalized            page_generator                 invoked at the end of PagesGenerator.generate_context
+page_writer_finalized               page_generator, writer         invoked after all pages have been written, but before the page generator
+                                                                   is closed.
 static_generator_context            static_generator, metadata
 static_generator_preread            static_generator               invoked before a static file is read in StaticGenerator.generate_context;
                                                                    use if code needs to do something before every static file is added to the
                                                                    staticfiles list.
 static_generator_init               static_generator               invoked in the StaticGenerator.__init__
 static_generator_finalized          static_generator               invoked at the end of StaticGenerator.generate_context
-content_object_init                 content_object                 invoked at the end of Content.__init__ (see note below)
+content_object_init                 content_object                 invoked at the end of Content.__init__
 content_written                     path, context                  invoked each time a content file is written.
+feed_written                        path, context, feed            invoked each time a feed file is written.
 =================================   ============================   ===========================================================================
 
-The list is currently small, so don't hesitate to add signals and make a pull
-request if you need them!
+.. warning::
 
-.. note::
-
-   The signal ``content_object_init`` can send a different type of object as
-   the argument. If you want to register only one type of object then you will
-   need to specify the sender when you are connecting to the signal.
-
-   ::
-
-       from pelican import signals
-       from pelican import contents
-
-       def test(sender, instance):
-               print "%s : %s content initialized !!" % (sender, instance)
-
-       def register():
-               signals.content_object_init.connect(test, sender=contents.Article)
+   Avoid ``content_object_init`` signal if you intend to read ``summary``
+   or ``content`` properties of the content object. That combination can
+   result in unresolved links when :ref:`ref-linking-to-internal-content`
+   (see `pelican-plugins bug #314`_). Use ``_summary`` and ``_content``
+   properties instead, or, alternatively, run your plugin at a later
+   stage (e.g. ``all_generators_finalized``).
 
 .. note::
 
@@ -207,3 +214,5 @@ Adding a new generator is also really easy. You might want to have a look at
         return MyGenerator
 
     signals.get_generators.connect(get_generators)
+
+.. _pelican-plugins bug #314: https://github.com/getpelican/pelican-plugins/issues/314

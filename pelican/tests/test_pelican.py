@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, print_function
 
+import collections
 import os
 import sys
 from tempfile import mkdtemp
@@ -10,6 +11,7 @@ import logging
 import subprocess
 
 from pelican import Pelican
+from pelican.generators import StaticGenerator
 from pelican.settings import read_settings
 from pelican.tests.support import LoggedTestCase, mute, locale_available, unittest
 
@@ -56,24 +58,37 @@ class TestPelican(LoggedTestCase):
         locale.setlocale(locale.LC_ALL, self.old_locale)
         super(TestPelican, self).tearDown()
 
-    def assertFilesEqual(self, diff):
-        msg = ("some generated files differ from the expected functional "
-               "tests output.\n"
-               "This is probably because the HTML generated files "
-               "changed. If these changes are normal, please refer "
-               "to docs/contribute.rst to update the expected "
-               "output of the functional tests.")
-
-        self.assertEqual(diff['left_only'], [], msg=msg)
-        self.assertEqual(diff['right_only'], [], msg=msg)
-        self.assertEqual(diff['diff_files'], [], msg=msg)
-
     def assertDirsEqual(self, left_path, right_path):
         out, err = subprocess.Popen(
-            ['git', 'diff', '--no-ext-diff', '--exit-code', '-w', left_path, right_path], env={'PAGER': ''},
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
+            ['git', 'diff', '--no-ext-diff', '--exit-code', '-w', left_path, right_path],
+            env={str('PAGER'): str('')}, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        ).communicate()
+        def ignorable_git_crlf_errors(line):
+            # Work around for running tests on Windows
+            for msg in [
+                    "LF will be replaced by CRLF",
+                    "The file will have its original line endings"]:
+                if msg in line:
+                    return True
+            return False
+        if err:
+            err = '\n'.join([l for l in err.decode('utf8').splitlines()
+                             if not ignorable_git_crlf_errors(l)])
         assert not out, out
         assert not err, err
+
+    def test_order_of_generators(self):
+        # StaticGenerator must run last, so it can identify files that
+        # were skipped by the other generators, and so static files can
+        # have their output paths overridden by the {attach} link syntax.
+
+        pelican = Pelican(settings=read_settings(path=None))
+        generator_classes = pelican.get_generator_classes()
+
+        self.assertTrue(generator_classes[-1] is StaticGenerator,
+            "StaticGenerator must be the last generator, but it isn't!")
+        self.assertIsInstance(generator_classes, collections.Sequence,
+            "get_generator_classes() must return a Sequence to preserve order")
 
     def test_basic_generation_works(self):
         # when running pelican without settings, it should pick up the default
@@ -108,8 +123,6 @@ class TestPelican(LoggedTestCase):
                          locale_available('French'), 'French locale needed')
     def test_custom_locale_generation_works(self):
         '''Test that generation with fr_FR.UTF-8 locale works'''
-        old_locale = locale.setlocale(locale.LC_TIME)
-
         if sys.platform == 'win32':
             our_locale = str('French')
         else:
@@ -182,5 +195,5 @@ class TestPelican(LoggedTestCase):
         logger.setLevel(orig_level)
         self.assertLogCountEqual(
             count=2,
-            msg="writing .*",
+            msg="Writing .*",
             level=logging.INFO)

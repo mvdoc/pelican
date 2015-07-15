@@ -18,6 +18,7 @@ except ImportError:
     load_source = imp.load_source
 
 from os.path import isabs
+from pelican.utils import posix_join
 
 from pelican.log import LimitFilter
 
@@ -36,19 +37,22 @@ DEFAULT_CONFIG = {
     'THEME': DEFAULT_THEME,
     'OUTPUT_PATH': 'output',
     'READERS': {},
-    'STATIC_PATHS': ['images', ],
+    'STATIC_PATHS': ['images'],
+    'STATIC_EXCLUDES': [],
+    'STATIC_EXCLUDE_SOURCES': True,
     'THEME_STATIC_DIR': 'theme',
     'THEME_STATIC_PATHS': ['static', ],
-    'FEED_ALL_ATOM': os.path.join('feeds', 'all.atom.xml'),
-    'CATEGORY_FEED_ATOM': os.path.join('feeds', '%s.atom.xml'),
-    'AUTHOR_FEED_ATOM': os.path.join('feeds', '%s.atom.xml'),
-    'AUTHOR_FEED_RSS': os.path.join('feeds', '%s.rss.xml'),
-    'TRANSLATION_FEED_ATOM': os.path.join('feeds', 'all-%s.atom.xml'),
+    'FEED_ALL_ATOM': posix_join('feeds', 'all.atom.xml'),
+    'CATEGORY_FEED_ATOM': posix_join('feeds', '%s.atom.xml'),
+    'AUTHOR_FEED_ATOM': posix_join('feeds', '%s.atom.xml'),
+    'AUTHOR_FEED_RSS': posix_join('feeds', '%s.rss.xml'),
+    'TRANSLATION_FEED_ATOM': posix_join('feeds', 'all-%s.atom.xml'),
     'FEED_MAX_ITEMS': '',
     'SITEURL': '',
     'SITENAME': 'A Pelican Blog',
     'DISPLAY_PAGES_ON_MENU': True,
     'DISPLAY_CATEGORIES_ON_MENU': True,
+    'DOCUTILS_SETTINGS': {},
     'OUTPUT_SOURCES': False,
     'OUTPUT_SOURCES_EXTENSION': '.text',
     'USE_FOLDER_AS_CATEGORY': True,
@@ -58,32 +62,29 @@ DEFAULT_CONFIG = {
     'NEWEST_FIRST_ARCHIVES': True,
     'REVERSE_CATEGORY_ORDER': False,
     'DELETE_OUTPUT_DIRECTORY': False,
-    'OUTPUT_RETENTION': (),
+    'OUTPUT_RETENTION': [],
     'ARTICLE_URL': '{slug}.html',
     'ARTICLE_SAVE_AS': '{slug}.html',
-    'ARTICLE_ORDER_BY': 'slug',
+    'ARTICLE_ORDER_BY': 'reversed-date',
     'ARTICLE_LANG_URL': '{slug}-{lang}.html',
     'ARTICLE_LANG_SAVE_AS': '{slug}-{lang}.html',
     'DRAFT_URL': 'drafts/{slug}.html',
-    'DRAFT_SAVE_AS': os.path.join('drafts', '{slug}.html'),
+    'DRAFT_SAVE_AS': posix_join('drafts', '{slug}.html'),
     'DRAFT_LANG_URL': 'drafts/{slug}-{lang}.html',
-    'DRAFT_LANG_SAVE_AS': os.path.join('drafts', '{slug}-{lang}.html'),
+    'DRAFT_LANG_SAVE_AS': posix_join('drafts', '{slug}-{lang}.html'),
     'PAGE_URL': 'pages/{slug}.html',
-    'PAGE_SAVE_AS': os.path.join('pages', '{slug}.html'),
+    'PAGE_SAVE_AS': posix_join('pages', '{slug}.html'),
     'PAGE_ORDER_BY': 'basename',
     'PAGE_LANG_URL': 'pages/{slug}-{lang}.html',
-    'PAGE_LANG_SAVE_AS': os.path.join('pages', '{slug}-{lang}.html'),
+    'PAGE_LANG_SAVE_AS': posix_join('pages', '{slug}-{lang}.html'),
     'STATIC_URL': '{path}',
     'STATIC_SAVE_AS': '{path}',
-    'PDF_GENERATOR': False,
-    'PDF_STYLE_PATH': '',
-    'PDF_STYLE': 'twelvepoint',
     'CATEGORY_URL': 'category/{slug}.html',
-    'CATEGORY_SAVE_AS': os.path.join('category', '{slug}.html'),
+    'CATEGORY_SAVE_AS': posix_join('category', '{slug}.html'),
     'TAG_URL': 'tag/{slug}.html',
-    'TAG_SAVE_AS': os.path.join('tag', '{slug}.html'),
+    'TAG_SAVE_AS': posix_join('tag', '{slug}.html'),
     'AUTHOR_URL': 'author/{slug}.html',
-    'AUTHOR_SAVE_AS': os.path.join('author', '{slug}.html'),
+    'AUTHOR_SAVE_AS': posix_join('author', '{slug}.html'),
     'PAGINATION_PATTERNS': [
         (0, '{name}{number}{extension}', '{name}{number}{extension}'),
     ],
@@ -92,11 +93,9 @@ DEFAULT_CONFIG = {
     'DAY_ARCHIVE_SAVE_AS': '',
     'RELATIVE_URLS': False,
     'DEFAULT_LANG': 'en',
-    'TAG_CLOUD_STEPS': 4,
-    'TAG_CLOUD_MAX_ITEMS': 100,
-    'DIRECT_TEMPLATES': ('index', 'tags', 'categories', 'authors', 'archives'),
+    'DIRECT_TEMPLATES': ['index', 'tags', 'categories', 'authors', 'archives'],
     'EXTRA_TEMPLATES_PATHS': [],
-    'PAGINATED_DIRECT_TEMPLATES': ('index', ),
+    'PAGINATED_DIRECT_TEMPLATES': ['index'],
     'PELICAN_CLASS': 'pelican.Pelican',
     'DEFAULT_DATE_FORMAT': '%a %d %B %Y',
     'DATE_FORMATS': {},
@@ -107,13 +106,14 @@ DEFAULT_CONFIG = {
     'LOCALE': [''],  # defaults to user locale
     'DEFAULT_PAGINATION': False,
     'DEFAULT_ORPHANS': 0,
-    'DEFAULT_METADATA': (),
+    'DEFAULT_METADATA': {},
     'FILENAME_METADATA': '(?P<date>\d{4}-\d{2}-\d{2}).*',
     'PATH_METADATA': '',
     'EXTRA_PATH_METADATA': {},
     'DEFAULT_STATUS': 'published',
     'ARTICLE_PERMALINK_STRUCTURE': '',
     'TYPOGRIFY': False,
+    'TYPOGRIFY_IGNORE_TAGS': [],
     'SUMMARY_MAX_LENGTH': 50,
     'PLUGIN_PATHS': [],
     'PLUGINS': [],
@@ -123,14 +123,14 @@ DEFAULT_CONFIG = {
     'SLUG_SUBSTITUTIONS': (),
     'INTRASITE_LINK_REGEX': '[{|](?P<what>.*?)[|}]',
     'SLUGIFY_SOURCE': 'title',
-    'CACHE_CONTENT': True,
+    'CACHE_CONTENT': False,
     'CONTENT_CACHING_LAYER': 'reader',
     'CACHE_PATH': 'cache',
     'GZIP_CACHE': True,
     'CHECK_MODIFIED_METHOD': 'mtime',
-    'LOAD_CONTENT_CACHE': True,
-    'AUTORELOAD_IGNORE_CACHE': False,
+    'LOAD_CONTENT_CACHE': False,
     'WRITE_SELECTED': [],
+    'FORMATTED_FIELDS': ['summary'],
     }
 
 PYGMENTS_RST_OPTIONS = None
@@ -154,7 +154,8 @@ def read_settings(path=None, override=None):
             local_settings['PLUGIN_PATHS'] = local_settings['PLUGIN_PATH']
             del local_settings['PLUGIN_PATH']
         if isinstance(local_settings['PLUGIN_PATHS'], six.string_types):
-            logger.warning("Defining %s setting as string has been deprecated (should be a list)" % 'PLUGIN_PATHS')
+            logger.warning("Defining PLUGIN_PATHS setting as string "
+                           "has been deprecated (should be a list)")
             local_settings['PLUGIN_PATHS'] = [local_settings['PLUGIN_PATHS']]
         elif local_settings['PLUGIN_PATHS'] is not None:
                 local_settings['PLUGIN_PATHS'] = [os.path.abspath(os.path.normpath(os.path.join(os.path.dirname(path), pluginpath)))
@@ -203,7 +204,7 @@ def configure_settings(settings):
                         ' (see pelican --help for more information)')
 
     # specify the log messages to be ignored
-    LimitFilter.ignore.update(set(settings.get('LOG_FILTER',
+    LimitFilter._ignore.update(set(settings.get('LOG_FILTER',
                                                DEFAULT_CONFIG['LOG_FILTER'])))
 
     # lookup the theme in "pelican/themes" if the given one doesn't exist
@@ -245,10 +246,9 @@ def configure_settings(settings):
             ]:
         if key in settings and not isinstance(settings[key], types):
             value = settings.pop(key)
-            logger.warn(
-                'Detected misconfigured {} ({}), '
-                'falling back to the default ({})'.format(
-                    key, value, DEFAULT_CONFIG[key]))
+            logger.warn('Detected misconfigured %s (%s), '
+                        'falling back to the default (%s)',
+                    key, value, DEFAULT_CONFIG[key])
 
     # try to set the different locales, fallback on the default.
     locales = settings.get('LOCALE', DEFAULT_CONFIG['LOCALE'])
@@ -321,8 +321,8 @@ def configure_settings(settings):
         old_key = key + '_DIR'
         new_key = key + '_PATHS'
         if old_key in settings:
-            logger.warning('Deprecated setting {}, moving it to {} list'.format(
-                old_key, new_key))
+            logger.warning('Deprecated setting %s, moving it to %s list',
+                old_key, new_key)
             settings[new_key] = [settings[old_key]]   # also make a list
             del settings[old_key]
 
@@ -337,6 +337,7 @@ def configure_settings(settings):
         'JINJA_EXTENSIONS',
         'PAGINATED_DIRECT_TEMPLATES',
         'PLUGINS',
+        'STATIC_EXCLUDES',
         'STATIC_PATHS',
         'THEME_STATIC_PATHS',
         'ARTICLE_PATHS',
@@ -345,8 +346,8 @@ def configure_settings(settings):
     for PATH_KEY in filter(lambda k: k in settings, path_keys):
         if isinstance(settings[PATH_KEY], six.string_types):
             logger.warning("Detected misconfiguration with %s setting "
-                           "(must be a list), falling back to the default"
-                           % PATH_KEY)
+                           "(must be a list), falling back to the default",
+                           PATH_KEY)
             settings[PATH_KEY] = DEFAULT_CONFIG[PATH_KEY]
 
     # Add {PAGE,ARTICLE}_PATHS to {ARTICLE,PAGE}_EXCLUDES

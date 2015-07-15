@@ -22,6 +22,50 @@ class ReaderTest(unittest.TestCase):
         r = readers.Readers(settings=get_settings(**kwargs))
         return r.read_file(base_path=CONTENT_PATH, path=path)
 
+    def assertDictHasSubset(self, dictionary, subset):
+        for key, value in subset.items():
+            if key in dictionary:
+                real_value = dictionary.get(key)
+                self.assertEqual(
+                    value,
+                    real_value,
+                    'Expected %s to have value %s, but was %s' % (key, value, real_value))
+            else:
+                self.fail(
+                   'Expected %s to have value %s, but was not in Dict' % (key, value))
+
+class TestAssertDictHasSubset(ReaderTest):
+    def setUp(self):
+        self.dictionary = {
+        'key-a' : 'val-a',
+        'key-b' : 'val-b'}
+
+    def tearDown(self):
+        self.dictionary = None
+
+    def test_subset(self):
+        self.assertDictHasSubset(self.dictionary, {'key-a':'val-a'})
+
+    def test_equal(self):
+        self.assertDictHasSubset(self.dictionary, self.dictionary)
+
+    def test_fail_not_set(self):
+        self.assertRaisesRegexp(
+            AssertionError,
+            'Expected.*key-c.*to have value.*val-c.*but was not in Dict',
+            self.assertDictHasSubset,
+                self.dictionary,
+                {'key-c':'val-c'}
+            )
+
+    def test_fail_wrong_val(self):
+        self.assertRaisesRegexp(
+            AssertionError,
+            'Expected .*key-a.* to have value .*val-b.* but was .*val-a.*',
+            self.assertDictHasSubset,
+                self.dictionary,
+                {'key-a':'val-b'}
+            )
 
 class DefaultReaderTest(ReaderTest):
 
@@ -48,8 +92,7 @@ class RstReaderTest(ReaderTest):
             'custom_field': 'http://notmyidea.org',
         }
 
-        for key, value in expected.items():
-            self.assertEqual(value, page.metadata[key], key)
+        self.assertDictHasSubset(page.metadata, expected)
 
     def test_article_with_filename_metadata(self):
         page = self.read_file(
@@ -61,8 +104,7 @@ class RstReaderTest(ReaderTest):
             'title': 'Rst with filename metadata',
             'reader': 'rst',
         }
-        for key, value in page.metadata.items():
-            self.assertEqual(value, expected[key], key)
+        self.assertDictHasSubset(page.metadata, expected)
 
         page = self.read_file(
             path='2012-11-29_rst_w_filename_meta#foo-bar.rst',
@@ -74,13 +116,12 @@ class RstReaderTest(ReaderTest):
             'date': SafeDatetime(2012, 11, 29),
             'reader': 'rst',
         }
-        for key, value in page.metadata.items():
-            self.assertEqual(value, expected[key], key)
+        self.assertDictHasSubset(page.metadata, expected)
 
         page = self.read_file(
             path='2012-11-29_rst_w_filename_meta#foo-bar.rst',
             FILENAME_METADATA=(
-                '(?P<date>\d{4}-\d{2}-\d{2})_'
+                '(?P<date>\d{4}-\d{2}-\d{2})'
                 '_(?P<Slug>.*)'
                 '#(?P<MyMeta>.*)-(?P<author>.*)'))
         expected = {
@@ -88,12 +129,11 @@ class RstReaderTest(ReaderTest):
             'author': 'Alexis Métaireau',
             'title': 'Rst with filename metadata',
             'date': SafeDatetime(2012, 11, 29),
-            'slug': 'article_with_filename_metadata',
+            'slug': 'rst_w_filename_meta',
             'mymeta': 'foo',
             'reader': 'rst',
         }
-        for key, value in page.metadata.items():
-            self.assertEqual(value, expected[key], key)
+        self.assertDictHasSubset(page.metadata, expected)
 
     def test_article_metadata_key_lowercase(self):
         # Keys of metadata should be lowercase.
@@ -104,6 +144,81 @@ class RstReaderTest(ReaderTest):
         self.assertIn('category', metadata, 'Key should be lowercase.')
         self.assertEqual('Yeah', metadata.get('category'),
                          'Value keeps case.')
+
+    def test_article_extra_path_metadata(self):
+        input_with_metadata = '2012-11-29_rst_w_filename_meta#foo-bar.rst'
+        page_metadata = self.read_file(
+            path=input_with_metadata,
+            FILENAME_METADATA=(
+                '(?P<date>\d{4}-\d{2}-\d{2})'
+                '_(?P<Slug>.*)'
+                '#(?P<MyMeta>.*)-(?P<author>.*)'
+                ),
+            EXTRA_PATH_METADATA={
+                input_with_metadata: {
+                    'key-1a': 'value-1a',
+                    'key-1b': 'value-1b'
+                    }
+                }
+            )
+        expected_metadata = {
+            'category': 'yeah',
+            'author' : 'Alexis Métaireau',
+            'title': 'Rst with filename metadata',
+            'date': SafeDatetime(2012, 11, 29),
+            'slug': 'rst_w_filename_meta',
+            'mymeta': 'foo',
+            'reader': 'rst',
+            'key-1a': 'value-1a',
+            'key-1b': 'value-1b'
+        }
+        self.assertDictHasSubset(page_metadata.metadata, expected_metadata)
+
+        input_file_path_without_metadata = 'article.rst'
+        page_without_metadata = self.read_file(
+            path=input_file_path_without_metadata,
+            EXTRA_PATH_METADATA={
+                input_file_path_without_metadata: {
+                    'author': 'Charlès Overwrite'}
+                }
+            )
+        expected_without_metadata = {
+            'category' : 'misc',
+            'author'   : 'Charlès Overwrite',
+            'title'    : 'Article title',
+            'reader'   : 'rst',
+        }
+        self.assertDictHasSubset(
+            page_without_metadata.metadata,
+            expected_without_metadata)
+
+    def test_article_extra_path_metadata_dont_overwrite(self):
+        #EXTRA_PATH_METADATA['author'] should get ignored
+        #since we don't overwrite already set values
+        input_file_path = '2012-11-29_rst_w_filename_meta#foo-bar.rst'
+        page = self.read_file(
+            path=input_file_path,
+            FILENAME_METADATA=(
+                '(?P<date>\d{4}-\d{2}-\d{2})'
+                '_(?P<Slug>.*)'
+                '#(?P<MyMeta>.*)-(?P<orginalauthor>.*)'),
+            EXTRA_PATH_METADATA={
+                input_file_path: {
+                    'author': 'Charlès Overwrite',
+                    'key-1b': 'value-1b'}
+                }
+            )
+        expected = {
+            'category': 'yeah',
+            'author' : 'Alexis Métaireau',
+            'title': 'Rst with filename metadata',
+            'date': SafeDatetime(2012, 11, 29),
+            'slug': 'rst_w_filename_meta',
+            'mymeta': 'foo',
+            'reader': 'rst',
+            'key-1b': 'value-1b'
+        }
+        self.assertDictHasSubset(page.metadata, expected)
 
     def test_typogrify(self):
         # if nothing is specified in the settings, the content should be
@@ -121,7 +236,7 @@ class RstReaderTest(ReaderTest):
             page = self.read_file(path='article.rst', TYPOGRIFY=True)
             expected = (
                 '<p><span class="caps">THIS</span> is some content. '
-                'With some stuff to&nbsp;&quot;typogrify&quot;&#8230;</p>\n'
+                'With some stuff to&nbsp;&#8220;typogrify&#8221;&#8230;</p>\n'
                 '<p>Now with added support for <abbr title="three letter '
                 'acronym"><span class="caps">TLA</span></abbr>.</p>\n')
 
@@ -146,12 +261,58 @@ class RstReaderTest(ReaderTest):
                                   TYPOGRIFY=True)
             expected = ('<p class="first last">Multi-line metadata should be'
                         ' supported\nas well as <strong>inline'
-                        ' markup</strong> and stuff to&nbsp;&quot;typogrify'
-                        '&quot;&#8230;</p>\n')
+                        ' markup</strong> and stuff to&nbsp;&#8220;typogrify'
+                        '&#8221;&#8230;</p>\n')
 
             self.assertEqual(page.metadata['summary'], expected)
         except ImportError:
             return unittest.skip('need the typogrify distribution')
+
+    def test_typogrify_ignore_tags(self):
+        try:
+            # typogrify should be able to ignore user specified tags,
+            # but tries to be clever with widont extension
+            page = self.read_file(path='article.rst', TYPOGRIFY=True,
+                                  TYPOGRIFY_IGNORE_TAGS = ['p'])
+            expected = ('<p>THIS is some content. With some stuff to&nbsp;'
+                        '&quot;typogrify&quot;...</p>\n<p>Now with added '
+                        'support for <abbr title="three letter acronym">'
+                        'TLA</abbr>.</p>\n')
+
+            self.assertEqual(page.content, expected)
+
+            # typogrify should ignore code blocks by default because
+            # code blocks are composed inside the pre tag
+            page = self.read_file(path='article_with_code_block.rst',
+                                 TYPOGRIFY=True)
+
+            expected = ('<p>An article with some&nbsp;code</p>\n'
+                        '<div class="highlight"><pre><span class="n">x</span>'
+                        ' <span class="o">&amp;</span>'
+                        ' <span class="n">y</span>\n</pre></div>\n'
+                        '<p>A block&nbsp;quote:</p>\n<blockquote>\nx '
+                        '<span class="amp">&amp;</span> y</blockquote>\n'
+                        '<p>Normal:\nx <span class="amp">&amp;</span>&nbsp;y</p>\n')
+
+            self.assertEqual(page.content, expected)
+
+            # instruct typogrify to also ignore blockquotes
+            page = self.read_file(path='article_with_code_block.rst',
+                                 TYPOGRIFY=True, TYPOGRIFY_IGNORE_TAGS = ['blockquote'])
+
+            expected = ('<p>An article with some&nbsp;code</p>\n'
+                        '<div class="highlight"><pre><span class="n">x</span>'
+                        ' <span class="o">&amp;</span>'
+                        ' <span class="n">y</span>\n</pre></div>\n'
+                        '<p>A block&nbsp;quote:</p>\n<blockquote>\nx '
+                        '&amp; y</blockquote>\n'
+                        '<p>Normal:\nx <span class="amp">&amp;</span>&nbsp;y</p>\n')
+
+            self.assertEqual(page.content, expected)
+        except ImportError:
+            return unittest.skip('need the typogrify distribution')
+        except TypeError:
+            return unittest.skip('need typogrify version 2.0.4 or later')
 
     def test_article_with_multiple_authors(self):
         page = self.read_file(path='article_with_multiple_authors.rst')
@@ -159,13 +320,28 @@ class RstReaderTest(ReaderTest):
             'authors': ['First Author', 'Second Author']
         }
 
-        for key, value in expected.items():
-            self.assertEqual(value, page.metadata[key], key)
+        self.assertDictHasSubset(page.metadata, expected)
 
+    def test_article_with_multiple_authors_semicolon(self):
+        page = self.read_file(
+            path='article_with_multiple_authors_semicolon.rst')
+        expected = {
+            'authors': ['Author, First', 'Author, Second']
+        }
 
+        self.assertDictHasSubset(page.metadata, expected)
+
+    def test_article_with_multiple_authors_list(self):
+        page = self.read_file(path='article_with_multiple_authors_list.rst')
+        expected = {
+            'authors': ['Author, First', 'Author, Second']
+        }
+
+        self.assertDictHasSubset(page.metadata, expected)
+
+@unittest.skipUnless(readers.Markdown, "markdown isn't installed")
 class MdReaderTest(ReaderTest):
 
-    @unittest.skipUnless(readers.Markdown, "markdown isn't installed")
     def test_article_with_metadata(self):
         reader = readers.MarkdownReader(settings=get_settings())
         content, metadata = reader.read(
@@ -178,8 +354,7 @@ class MdReaderTest(ReaderTest):
             'modified': SafeDatetime(2010, 12, 2, 10, 20),
             'tags': ['foo', 'bar', 'foobar'],
         }
-        for key, value in metadata.items():
-            self.assertEqual(value, expected[key], key)
+        self.assertDictHasSubset(metadata, expected)
 
         content, metadata = reader.read(
             _path('article_with_markdown_and_nonascii_summary.md'))
@@ -192,10 +367,8 @@ class MdReaderTest(ReaderTest):
             'tags': ['パイソン', 'マック'],
             'slug': 'python-virtualenv-on-mac-osx-mountain-lion-10.8',
         }
-        for key, value in metadata.items():
-            self.assertEqual(value, expected[key], key)
+        self.assertDictHasSubset(metadata, expected)
 
-    @unittest.skipUnless(readers.Markdown, "markdown isn't installed")
     def test_article_with_footnote(self):
         reader = readers.MarkdownReader(settings=get_settings())
         content, metadata = reader.read(
@@ -225,7 +398,6 @@ class MdReaderTest(ReaderTest):
                 '<em>should</em> be supported.</p>'),
             'date': SafeDatetime(2012, 10, 31),
             'modified': SafeDatetime(2012, 11, 1),
-            'slug': 'article-with-markdown-containing-footnotes',
             'multiline': [
                 'Line Metadata should be handle properly.',
                 'See syntax of Meta-Data extension of Python Markdown package:',
@@ -236,10 +408,8 @@ class MdReaderTest(ReaderTest):
             ]
         }
         self.assertEqual(content, expected_content)
-        for key, value in metadata.items():
-            self.assertEqual(value, expected_metadata[key], key)
+        self.assertDictHasSubset(metadata, expected_metadata)
 
-    @unittest.skipUnless(readers.Markdown, "markdown isn't installed")
     def test_article_with_file_extensions(self):
         reader = readers.MarkdownReader(settings=get_settings())
         # test to ensure the md file extension is being processed by the
@@ -276,7 +446,6 @@ class MdReaderTest(ReaderTest):
                     " the mdown extension.</p>")
         self.assertEqual(content, expected)
 
-    @unittest.skipUnless(readers.Markdown, "markdown isn't installed")
     def test_article_with_markdown_markup_extension(self):
         # test to ensure the markdown markup extension is being processed as
         # expected
@@ -296,7 +465,6 @@ class MdReaderTest(ReaderTest):
 
         self.assertEqual(page.content, expected)
 
-    @unittest.skipUnless(readers.Markdown, "markdown isn't installed")
     def test_article_with_filename_metadata(self):
         page = self.read_file(
             path='2012-11-30_md_w_filename_meta#foo-bar.md',
@@ -305,8 +473,7 @@ class MdReaderTest(ReaderTest):
             'category': 'yeah',
             'author': 'Alexis Métaireau',
         }
-        for key, value in expected.items():
-            self.assertEqual(value, page.metadata[key], key)
+        self.assertDictHasSubset(page.metadata, expected)
 
         page = self.read_file(
             path='2012-11-30_md_w_filename_meta#foo-bar.md',
@@ -316,8 +483,7 @@ class MdReaderTest(ReaderTest):
             'author': 'Alexis Métaireau',
             'date': SafeDatetime(2012, 11, 30),
         }
-        for key, value in expected.items():
-            self.assertEqual(value, page.metadata[key], key)
+        self.assertDictHasSubset(page.metadata, expected)
 
         page = self.read_file(
             path='2012-11-30_md_w_filename_meta#foo-bar.md',
@@ -332,8 +498,7 @@ class MdReaderTest(ReaderTest):
             'slug': 'md_w_filename_meta',
             'mymeta': 'foo',
         }
-        for key, value in expected.items():
-            self.assertEqual(value, page.metadata[key], key)
+        self.assertDictHasSubset(page.metadata, expected)
 
 
 class HTMLReaderTest(ReaderTest):
@@ -351,8 +516,7 @@ class HTMLReaderTest(ReaderTest):
             'tags': ['foo', 'bar', 'foobar'],
         }
 
-        for key, value in expected.items():
-            self.assertEqual(value, page.metadata[key], key)
+        self.assertDictHasSubset(page.metadata, expected)
 
     def test_article_with_metadata(self):
         page = self.read_file(path='article_with_metadata.html')
@@ -366,8 +530,7 @@ class HTMLReaderTest(ReaderTest):
             'custom_field': 'http://notmyidea.org',
         }
 
-        for key, value in expected.items():
-            self.assertEqual(value, page.metadata[key], key)
+        self.assertDictHasSubset(page.metadata, expected)
 
     def test_article_with_multiple_authors(self):
         page = self.read_file(path='article_with_multiple_authors.html')
@@ -375,8 +538,7 @@ class HTMLReaderTest(ReaderTest):
             'authors': ['First Author', 'Second Author']
         }
 
-        for key, value in expected.items():
-            self.assertEqual(value, page.metadata[key], key)
+        self.assertDictHasSubset(page.metadata, expected)
 
     def test_article_with_metadata_and_contents_attrib(self):
         page = self.read_file(path='article_with_metadata_and_contents.html')
@@ -389,8 +551,7 @@ class HTMLReaderTest(ReaderTest):
             'tags': ['foo', 'bar', 'foobar'],
             'custom_field': 'http://notmyidea.org',
         }
-        for key, value in expected.items():
-            self.assertEqual(value, page.metadata[key], key)
+        self.assertDictHasSubset(page.metadata, expected)
 
     def test_article_with_null_attributes(self):
         page = self.read_file(path='article_with_null_attributes.html')
@@ -403,9 +564,12 @@ class HTMLReaderTest(ReaderTest):
     def test_article_metadata_key_lowercase(self):
         # Keys of metadata should be lowercase.
         page = self.read_file(path='article_with_uppercase_metadata.html')
+
+        # Key should be lowercase
         self.assertIn('category', page.metadata, 'Key should be lowercase.')
-        self.assertEqual('Yeah', page.metadata.get('category'),
-                         'Value keeps cases.')
+
+        # Value should keep cases
+        self.assertEqual('Yeah', page.metadata.get('category'))
 
     def test_article_with_nonconformant_meta_tags(self):
         page = self.read_file(path='article_with_nonconformant_meta_tags.html')
@@ -414,5 +578,4 @@ class HTMLReaderTest(ReaderTest):
             'title': 'Article with Nonconformant HTML meta tags',
         }
 
-        for key, value in expected.items():
-            self.assertEqual(value, page.metadata[key], key)
+        self.assertDictHasSubset(page.metadata, expected)
