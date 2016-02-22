@@ -1,21 +1,23 @@
 # -*- coding: utf-8 -*-
-from __future__ import with_statement, unicode_literals, print_function
-import six
+from __future__ import print_function, unicode_literals, with_statement
 
-import os
 import logging
+import os
+
+from feedgenerator import Atom1Feed, Rss201rev2Feed
+
+from jinja2 import Markup
+
+import six
+from six.moves.urllib.parse import urlparse
+
+from pelican import signals
+from pelican.paginator import Paginator
+from pelican.utils import (get_relative_path, is_selected_for_writing,
+                           path_to_url, set_date_tzinfo)
 
 if not six.PY3:
     from codecs import open
-
-from feedgenerator import Atom1Feed, Rss201rev2Feed
-from jinja2 import Markup
-from six.moves.urllib.parse import urlparse
-
-from pelican.paginator import Paginator
-from pelican.utils import (get_relative_path, path_to_url, set_date_tzinfo,
-                           is_selected_for_writing)
-from pelican import signals
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +81,8 @@ class Writer(object):
         self._written_files.add(filename)
         return open(filename, 'w', encoding=encoding)
 
-    def write_feed(self, elements, context, path=None, feed_type='atom'):
+    def write_feed(self, elements, context, path=None, feed_type='atom',
+                   override_output=False):
         """Generate a feed with the list of articles provided
 
         Return the feed. If no path or output_path is specified, just
@@ -89,6 +92,9 @@ class Writer(object):
         :param context: the context to get the feed metadata.
         :param path: the path to output.
         :param feed_type: the feed type to use (atom or rss)
+        :param override_output: boolean telling if we can override previous
+            output with the same name (and if next files written with the same
+            name should be skipped to keep that one)
         """
         if not is_selected_for_writing(self.settings, path):
             return
@@ -115,13 +121,13 @@ class Writer(object):
                 pass
 
             encoding = 'utf-8' if six.PY3 else None
-            with self._open_w(complete_path, encoding) as fp:
+            with self._open_w(complete_path, encoding, override_output) as fp:
                 feed.write(fp, 'utf-8')
                 logger.info('Writing %s', complete_path)
 
-            signals.feed_written.send(complete_path, context=context, feed=feed)
+            signals.feed_written.send(
+                complete_path, context=context, feed=feed)
         return feed
-
 
     def write_file(self, name, template, context, relative_urls=False,
                    paginated=None, override_output=False, **kwargs):
@@ -139,9 +145,10 @@ class Writer(object):
         :param **kwargs: additional variables to pass to the templates
         """
 
-        if name is False or name == "" or\
-           not is_selected_for_writing(self.settings,\
-               os.path.join(self.output_path, name)):
+        if name is False or \
+           name == "" or \
+           not is_selected_for_writing(self.settings,
+                                       os.path.join(self.output_path, name)):
             return
         elif not name:
             # other stuff, just return for now
@@ -169,7 +176,8 @@ class Writer(object):
 
         def _get_localcontext(context, name, kwargs, relative_urls):
             localcontext = context.copy()
-            localcontext['localsiteurl'] = localcontext.get('localsiteurl', None)
+            localcontext['localsiteurl'] = localcontext.get(
+                'localsiteurl', None)
             if relative_urls:
                 relative_url = path_to_url(get_relative_path(name))
                 localcontext['SITEURL'] = relative_url
@@ -201,11 +209,13 @@ class Writer(object):
                          '%s_previous_page' % key: previous_page,
                          '%s_next_page' % key: next_page})
 
-                localcontext = _get_localcontext(context, page.save_as, paginated_kwargs, relative_urls)
+                localcontext = _get_localcontext(
+                    context, page.save_as, paginated_kwargs, relative_urls)
                 _write_file(template, localcontext, self.output_path,
                             page.save_as, override_output)
         else:
             # no pagination
-            localcontext = _get_localcontext(context, name, kwargs, relative_urls)
+            localcontext = _get_localcontext(
+                context, name, kwargs, relative_urls)
             _write_file(template, localcontext, self.output_path, name,
                         override_output)

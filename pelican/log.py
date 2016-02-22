@@ -1,18 +1,18 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals, print_function
+from __future__ import print_function, unicode_literals
+
+import locale
+import logging
+import os
+import sys
+from collections import Mapping, defaultdict
+
+import six
 
 __all__ = [
     'init'
 ]
 
-import os
-import sys
-import logging
-import locale
-
-from collections import defaultdict, Mapping
-
-import six
 
 class BaseFormatter(logging.Formatter):
     def __init__(self, fmt=None, datefmt=None):
@@ -20,7 +20,8 @@ class BaseFormatter(logging.Formatter):
         super(BaseFormatter, self).__init__(fmt=FORMAT, datefmt=datefmt)
 
     def format(self, record):
-        record.__dict__['customlevelname'] = self._get_levelname(record.levelname)
+        customlevel = self._get_levelname(record.levelname)
+        record.__dict__['customlevelname'] = customlevel
         # format multiline messages 'nicely' to make it clear they are together
         record.msg = record.msg.replace('\n', '\n  | ')
         return super(BaseFormatter, self).format(record)
@@ -132,13 +133,13 @@ class SafeLogger(logging.Logger):
     def _log(self, level, msg, args, exc_info=None, extra=None):
         # if the only argument is a Mapping, Logger uses that for formatting
         # format values for that case
-        if args and len(args)==1 and isinstance(args[0], Mapping):
+        if args and len(args) == 1 and isinstance(args[0], Mapping):
             args = ({k: self._decode_arg(v) for k, v in args[0].items()},)
         # otherwise, format each arg
         else:
             args = tuple(self._decode_arg(arg) for arg in args)
-        super(SafeLogger, self)._log(level, msg, args,
-            exc_info=exc_info, extra=extra)
+        super(SafeLogger, self)._log(
+            level, msg, args, exc_info=exc_info, extra=extra)
 
     def _decode_arg(self, arg):
         '''
@@ -166,25 +167,75 @@ class LimitLogger(SafeLogger):
 
     def __init__(self, *args, **kwargs):
         super(LimitLogger, self).__init__(*args, **kwargs)
+        self.enable_filter()
+
+    def disable_filter(self):
+        self.removeFilter(LimitLogger.limit_filter)
+
+    def enable_filter(self):
         self.addFilter(LimitLogger.limit_filter)
 
-logging.setLoggerClass(LimitLogger)
+
+class FatalLogger(LimitLogger):
+    warnings_fatal = False
+    errors_fatal = False
+
+    def warning(self, *args, **kwargs):
+        super(FatalLogger, self).warning(*args, **kwargs)
+        if FatalLogger.warnings_fatal:
+            raise RuntimeError('Warning encountered')
+
+    def error(self, *args, **kwargs):
+        super(FatalLogger, self).error(*args, **kwargs)
+        if FatalLogger.errors_fatal:
+            raise RuntimeError('Error encountered')
+
+logging.setLoggerClass(FatalLogger)
 
 
-def init(level=None, handler=logging.StreamHandler()):
+def supports_color():
+    """
+    Returns True if the running system's terminal supports color,
+    and False otherwise.
 
-    logger = logging.getLogger()
+    from django.core.management.color
+    """
+    plat = sys.platform
+    supported_platform = plat != 'Pocket PC' and \
+        (plat != 'win32' or 'ANSICON' in os.environ)
 
-    if (os.isatty(sys.stdout.fileno())
-            and not sys.platform.startswith('win')):
-        fmt = ANSIFormatter()
+    # isatty is not always implemented, #6223.
+    is_a_tty = hasattr(sys.stdout, 'isatty') and sys.stdout.isatty()
+    if not supported_platform or not is_a_tty:
+        return False
+    return True
+
+
+def get_formatter():
+    if supports_color():
+        return ANSIFormatter()
     else:
-        fmt = TextFormatter()
-    handler.setFormatter(fmt)
+        return TextFormatter()
+
+
+def init(level=None, fatal='', handler=logging.StreamHandler(), name=None):
+    FatalLogger.warnings_fatal = fatal.startswith('warning')
+    FatalLogger.errors_fatal = bool(fatal)
+
+    logger = logging.getLogger(name)
+
+    handler.setFormatter(get_formatter())
     logger.addHandler(handler)
 
     if level:
         logger.setLevel(level)
+
+
+def log_warnings():
+    import warnings
+    logging.captureWarnings(True)
+    warnings.simplefilter("default", DeprecationWarning)
+    init(logging.DEBUG, name='py.warnings')
 
 
 if __name__ == '__main__':

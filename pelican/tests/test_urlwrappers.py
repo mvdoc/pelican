@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
 
-from pelican.urlwrappers import URLWrapper, Tag, Category
 from pelican.tests.support import unittest
+from pelican.urlwrappers import Author, Category, Tag, URLWrapper
+
 
 class TestURLWrapper(unittest.TestCase):
     def test_ordering(self):
@@ -33,9 +34,11 @@ class TestURLWrapper(unittest.TestCase):
     def test_equality(self):
         tag = Tag('test', settings={})
         cat = Category('test', settings={})
+        author = Author('test', settings={})
 
         # same name, but different class
         self.assertNotEqual(tag, cat)
+        self.assertNotEqual(tag, author)
 
         # should be equal vs text representing the same name
         self.assertEqual(tag, u'test')
@@ -46,6 +49,10 @@ class TestURLWrapper(unittest.TestCase):
         # Tags describing the same should be equal
         tag_equal = Tag('Test', settings={})
         self.assertEqual(tag, tag_equal)
+
+        # Author describing the same should be equal
+        author_equal = Author('Test', settings={})
+        self.assertEqual(author, author_equal)
 
         cat_ascii = Category('指導書', settings={})
         self.assertEqual(cat_ascii, u'zhi-dao-shu')

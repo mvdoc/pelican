@@ -6,6 +6,19 @@ Next release
 
 - Nothing yet
 
+3.6.3 (2015-08-14)
+==================
+
+* Fix permissions issue in release tarball
+
+3.6.2 (2015-08-01)
+==================
+
+* Fix installation errors related to Unicode in tests
+* Don't show pagination in ``notmyidea`` theme if there's only one page
+* Make hidden pages available in context
+* Improve URLWrapper comparison
+
 3.6.0 (2015-06-15)
 ==================
 

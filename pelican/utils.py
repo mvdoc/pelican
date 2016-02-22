@@ -1,29 +1,37 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals, print_function
-import six
+from __future__ import print_function, unicode_literals
 
 import codecs
+import datetime
 import errno
 import fnmatch
 import locale
 import logging
 import os
-import pytz
 import re
 import shutil
 import sys
 import traceback
-import pickle
-import datetime
-
 from collections import Hashable
 from contextlib import contextmanager
-import dateutil.parser
 from functools import partial
 from itertools import groupby
-from jinja2 import Markup
 from operator import attrgetter
-from posixpath import join as posix_join
+
+import dateutil.parser
+
+from jinja2 import Markup
+
+import pytz
+
+import six
+from six.moves import html_entities
+from six.moves.html_parser import HTMLParser
+
+try:
+    from html import escape
+except ImportError:
+    from cgi import escape
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +50,9 @@ def strftime(date, date_format):
     formatting them with the date, (if necessary) decoding the output and
     replacing formatted output back.
     '''
-
+    def strip_zeros(x):
+        return x.lstrip('0') or '0'
     c89_directives = 'aAbBcdfHIjmMpSUwWxXyYzZ%'
-    strip_zeros = lambda x: x.lstrip('0') or '0'
 
     # grab candidate format options
     format_options = '%[-]?.'
@@ -199,8 +207,8 @@ def deprecated_attribute(old, new, since=None, remove=None, doc=None):
                 ' and will be removed by version {}'.format(version))
         message.append('.  Use {} instead.'.format(new))
         logger.warning(''.join(message))
-        logger.debug(''.join(
-                six.text_type(x) for x in traceback.format_stack()))
+        logger.debug(''.join(six.text_type(x) for x
+                             in traceback.format_stack()))
 
     def fget(self):
         _warn()
@@ -223,7 +231,7 @@ def get_date(string):
     """
     string = re.sub(' +', ' ', string)
     default = SafeDatetime.now().replace(hour=0, minute=0,
-                                        second=0, microsecond=0)
+                                         second=0, microsecond=0)
     try:
         return dateutil.parser.parse(string, default=default)
     except (TypeError, ValueError):
@@ -318,12 +326,12 @@ def copy(source, destination, ignores=None):
 
         for src_dir, subdirs, others in os.walk(source_):
             dst_dir = os.path.join(destination_,
-                                    os.path.relpath(src_dir, source_))
+                                   os.path.relpath(src_dir, source_))
 
             subdirs[:] = (s for s in subdirs if not any(fnmatch.fnmatch(s, i)
                                                         for i in ignores))
-            others[:] =  (o for o in others  if not any(fnmatch.fnmatch(o, i)
-                                                        for i in ignores))
+            others[:] = (o for o in others if not any(fnmatch.fnmatch(o, i)
+                                                      for i in ignores))
 
             if not os.path.isdir(dst_dir):
                 logger.info('Creating directory %s', dst_dir)
@@ -337,8 +345,10 @@ def copy(source, destination, ignores=None):
                     logger.info('Copying %s to %s', src_path, dst_path)
                     shutil.copy2(src_path, dst_path)
                 else:
-                    logger.warning('Skipped copy %s (not a file or directory) to %s',
+                    logger.warning('Skipped copy %s (not a file or '
+                                   'directory) to %s',
                                    src_path, dst_path)
+
 
 def clean_output_dir(path, retention):
     """Remove all files from output directory except those in retention list"""
@@ -365,8 +375,8 @@ def clean_output_dir(path, retention):
                 shutil.rmtree(file)
                 logger.debug("Deleted directory %s", file)
             except Exception as e:
-                logger.error("Unable to delete directory %s; %s", 
-                        file, e)
+                logger.error("Unable to delete directory %s; %s",
+                             file, e)
         elif os.path.isfile(file) or os.path.islink(file):
             try:
                 os.remove(file)
@@ -402,6 +412,125 @@ def posixize_path(rel_path):
     return rel_path.replace(os.sep, '/')
 
 
+class _HTMLWordTruncator(HTMLParser):
+
+    _word_regex = re.compile(r"\w[\w'-]*", re.U)
+    _word_prefix_regex = re.compile(r'\w', re.U)
+    _singlets = ('br', 'col', 'link', 'base', 'img', 'param', 'area',
+                 'hr', 'input')
+
+    class TruncationCompleted(Exception):
+
+        def __init__(self, truncate_at):
+            super(_HTMLWordTruncator.TruncationCompleted, self).__init__(
+                truncate_at)
+            self.truncate_at = truncate_at
+
+    def __init__(self, max_words):
+        # In Python 2, HTMLParser is not a new-style class,
+        # hence super() cannot be used.
+        try:
+            HTMLParser.__init__(self, convert_charrefs=False)
+        except TypeError:
+            # pre Python 3.3
+            HTMLParser.__init__(self)
+
+        self.max_words = max_words
+        self.words_found = 0
+        self.open_tags = []
+        self.last_word_end = None
+        self.truncate_at = None
+
+    def feed(self, *args, **kwargs):
+        try:
+            # With Python 2, super() cannot be used.
+            # See the comment for __init__().
+            HTMLParser.feed(self, *args, **kwargs)
+        except self.TruncationCompleted as exc:
+            self.truncate_at = exc.truncate_at
+        else:
+            self.truncate_at = None
+
+    def getoffset(self):
+        line_start = 0
+        lineno, line_offset = self.getpos()
+        for i in range(lineno - 1):
+            line_start = self.rawdata.index('\n', line_start) + 1
+        return line_start + line_offset
+
+    def add_word(self, word_end):
+        self.words_found += 1
+        self.last_word_end = None
+        if self.words_found == self.max_words:
+            raise self.TruncationCompleted(word_end)
+
+    def add_last_word(self):
+        if self.last_word_end is not None:
+            self.add_word(self.last_word_end)
+
+    def handle_starttag(self, tag, attrs):
+        self.add_last_word()
+        if tag not in self._singlets:
+            self.open_tags.insert(0, tag)
+
+    def handle_endtag(self, tag):
+        self.add_last_word()
+        try:
+            i = self.open_tags.index(tag)
+        except ValueError:
+            pass
+        else:
+            # SGML: An end tag closes, back to the matching start tag,
+            # all unclosed intervening start tags with omitted end tags
+            del self.open_tags[:i + 1]
+
+    def handle_data(self, data):
+        word_end = 0
+        offset = self.getoffset()
+
+        while self.words_found < self.max_words:
+            match = self._word_regex.search(data, word_end)
+            if not match:
+                break
+
+            if match.start(0) > 0:
+                self.add_last_word()
+
+            word_end = match.end(0)
+            self.last_word_end = offset + word_end
+
+        if word_end < len(data):
+            self.add_last_word()
+
+    def handle_ref(self, char):
+        offset = self.getoffset()
+        ref_end = self.rawdata.index(';', offset) + 1
+
+        if self.last_word_end is None:
+            if self._word_prefix_regex.match(char):
+                self.last_word_end = ref_end
+        else:
+            if self._word_regex.match(char):
+                self.last_word_end = ref_end
+            else:
+                self.add_last_word()
+
+    def handle_entityref(self, name):
+        try:
+            codepoint = html_entities.name2codepoint[name]
+        except KeyError:
+            self.handle_ref('')
+        else:
+            self.handle_ref(six.unichr(codepoint))
+
+    def handle_charref(self, name):
+        if name.startswith('x'):
+            codepoint = int(name[1:], 16)
+        else:
+            codepoint = int(name)
+        self.handle_ref(six.unichr(codepoint))
+
+
 def truncate_html_words(s, num, end_text='...'):
     """Truncates HTML to a certain number of words.
 
@@ -414,62 +543,26 @@ def truncate_html_words(s, num, end_text='...'):
     length = int(num)
     if length <= 0:
         return ''
-    html4_singlets = ('br', 'col', 'link', 'base', 'img', 'param', 'area',
-                      'hr', 'input')
-
-    # Set up regular expressions
-    re_words = re.compile(r'&.*?;|<.*?>|(\w[\w-]*)', re.U)
-    re_tag = re.compile(r'<(/)?([^ ]+?)(?: (/)| .*?)?>')
-    # Count non-HTML words and keep note of open tags
-    pos = 0
-    end_text_pos = 0
-    words = 0
-    open_tags = []
-    while words <= length:
-        m = re_words.search(s, pos)
-        if not m:
-            # Checked through whole string
-            break
-        pos = m.end(0)
-        if m.group(1):
-            # It's an actual non-HTML word
-            words += 1
-            if words == length:
-                end_text_pos = pos
-            continue
-        # Check for tag
-        tag = re_tag.match(m.group(0))
-        if not tag or end_text_pos:
-            # Don't worry about non tags or tags after our truncate point
-            continue
-        closing_tag, tagname, self_closing = tag.groups()
-        tagname = tagname.lower()  # Element names are always case-insensitive
-        if self_closing or tagname in html4_singlets:
-            pass
-        elif closing_tag:
-            # Check for match in open tags list
-            try:
-                i = open_tags.index(tagname)
-            except ValueError:
-                pass
-            else:
-                # SGML: An end tag closes, back to the matching start tag,
-                # all unclosed intervening start tags with omitted end tags
-                open_tags = open_tags[i + 1:]
-        else:
-            # Add it to the start of the open tags list
-            open_tags.insert(0, tagname)
-    if words <= length:
-        # Don't try to close tags if we don't need to truncate
+    truncator = _HTMLWordTruncator(length)
+    truncator.feed(s)
+    if truncator.truncate_at is None:
         return s
-    out = s[:end_text_pos]
+    out = s[:truncator.truncate_at]
     if end_text:
         out += ' ' + end_text
     # Close any tags still open
-    for tag in open_tags:
+    for tag in truncator.open_tags:
         out += '</%s>' % tag
     # Return string
     return out
+
+
+def escape_html(text, quote=True):
+    """Escape '&', '<' and '>' to HTML-safe sequences.
+
+    In Python 2 this uses cgi.escape and in Python 3 this uses html.escape. We
+    wrap here to ensure the quote argument has an identical default."""
+    return escape(text, quote=quote)
 
 
 def process_translations(content_list, order_by=None):
@@ -498,12 +591,12 @@ def process_translations(content_list, order_by=None):
 
     for slug, items in grouped_by_slugs:
         items = list(items)
-        # items with `translation` metadata will be used as translations…
+        # items with `translation` metadata will be used as translations...
         default_lang_items = list(filter(
-                lambda i: i.metadata.get('translation', 'false').lower()
-                        == 'false',
-                items))
-        # …unless all items with that slug are translations
+            lambda i:
+                i.metadata.get('translation', 'false').lower() == 'false',
+            items))
+        # ...unless all items with that slug are translations
         if not default_lang_items:
             default_lang_items = items
 
@@ -513,13 +606,14 @@ def process_translations(content_list, order_by=None):
             len_ = len(lang_items)
             if len_ > 1:
                 logger.warning('There are %s variants of "%s" with lang %s',
-                    len_, slug, lang)
+                               len_, slug, lang)
                 for x in lang_items:
                     logger.warning('\t%s', x.source_path)
 
         # find items with default language
-        default_lang_items = list(filter(attrgetter('in_default_lang'),
-                default_lang_items))
+        default_lang_items = list(filter(
+            attrgetter('in_default_lang'),
+            default_lang_items))
 
         # if there is no article with default language, take an other one
         if not default_lang_items:
@@ -527,10 +621,9 @@ def process_translations(content_list, order_by=None):
 
         if not slug:
             logger.warning(
-                    'empty slug for %s. '
-                    'You can fix this by adding a title or a slug to your '
-                    'content',
-                    default_lang_items[0].source_path)
+                'Empty slug for %s. You can fix this by '
+                'adding a title or a slug to your content',
+                default_lang_items[0].source_path)
         index.extend(default_lang_items)
         translations.extend([x for x in items if x not in default_lang_items])
         for a in items:
@@ -558,10 +651,12 @@ def process_translations(content_list, order_by=None):
                     index.sort(key=attrgetter(order_by),
                                reverse=order_reversed)
                 except AttributeError:
-                    logger.warning('There is no "%s" attribute in the item '
+                    logger.warning(
+                        'There is no "%s" attribute in the item '
                         'metadata. Defaulting to slug order.', order_by)
         else:
-            logger.warning('Invalid *_ORDER_BY setting (%s).'
+            logger.warning(
+                'Invalid *_ORDER_BY setting (%s).'
                 'Valid options are strings and functions.', order_by)
 
     return index, translations
@@ -580,12 +675,12 @@ def folder_watcher(path, extensions, ignores=[]):
             dirs[:] = [x for x in dirs if not x.startswith(os.curdir)]
 
             for f in files:
-                if (f.endswith(tuple(extensions)) and
-                    not any(fnmatch.fnmatch(f, ignore) for ignore in ignores)):
-                    try:
-                        yield os.stat(os.path.join(root, f)).st_mtime
-                    except OSError as e:
-                        logger.warning('Caught Exception: %s', e)
+                if f.endswith(tuple(extensions)) and \
+                   not any(fnmatch.fnmatch(f, ignore) for ignore in ignores):
+                        try:
+                            yield os.stat(os.path.join(root, f)).st_mtime
+                        except OSError as e:
+                            logger.warning('Caught Exception: %s', e)
 
     LAST_MTIME = 0
     while True:

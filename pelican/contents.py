@@ -1,26 +1,27 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals, print_function
-import six
-from six.moves.urllib.parse import urlparse, urlunparse
+from __future__ import print_function, unicode_literals
 
 import copy
 import locale
 import logging
-import functools
 import os
 import re
 import sys
 
 import pytz
 
+import six
+from six.moves.urllib.parse import urlparse, urlunparse
+
 from pelican import signals
 from pelican.settings import DEFAULT_CONFIG
-from pelican.utils import (slugify, truncate_html_words, memoized, strftime,
-                           python_2_unicode_compatible, deprecated_attribute,
-                           path_to_url, posixize_path, set_date_tzinfo, SafeDatetime)
+from pelican.utils import (SafeDatetime, deprecated_attribute, memoized,
+                           path_to_url, posixize_path,
+                           python_2_unicode_compatible, set_date_tzinfo,
+                           slugify, strftime, truncate_html_words)
 
 # Import these so that they're avalaible when you import from pelican.contents.
-from pelican.urlwrappers import (URLWrapper, Author, Category, Tag)  # NOQA
+from pelican.urlwrappers import (Author, Category, Tag, URLWrapper)  # NOQA
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +67,7 @@ class Content(object):
         # also keep track of the metadata attributes available
         self.metadata = local_metadata
 
-        #default template if it's not defined in page
+        # default template if it's not defined in page
         self.template = self._get_template()
 
         # First, read the authors from "authors", if not, fallback to "author"
@@ -94,13 +95,16 @@ class Content(object):
         # create the slug if not existing, generate slug according to
         # setting of SLUG_ATTRIBUTE
         if not hasattr(self, 'slug'):
-            if settings['SLUGIFY_SOURCE'] == 'title' and hasattr(self, 'title'):
+            if (settings['SLUGIFY_SOURCE'] == 'title' and
+                    hasattr(self, 'title')):
                 self.slug = slugify(self.title,
-                                settings.get('SLUG_SUBSTITUTIONS', ()))
-            elif settings['SLUGIFY_SOURCE'] == 'basename' and source_path != None:
-                basename = os.path.basename(os.path.splitext(source_path)[0])
-                self.slug = slugify(basename,
-                                settings.get('SLUG_SUBSTITUTIONS', ()))
+                                    settings.get('SLUG_SUBSTITUTIONS', ()))
+            elif (settings['SLUGIFY_SOURCE'] == 'basename' and
+                    source_path is not None):
+                basename = os.path.basename(
+                    os.path.splitext(source_path)[0])
+                self.slug = slugify(
+                    basename, settings.get('SLUG_SUBSTITUTIONS', ()))
 
         self.source_path = source_path
 
@@ -233,7 +237,8 @@ class Content(object):
                         if isinstance(linked_content, Static):
                             linked_content.attach_to(self)
                         else:
-                            logger.warning("%s used {attach} link syntax on a "
+                            logger.warning(
+                                "%s used {attach} link syntax on a "
                                 "non-static file. Use {filename} instead.",
                                 self.get_relative_source_path())
                     origin = '/'.join((siteurl, linked_content.url))
@@ -241,13 +246,22 @@ class Content(object):
                 else:
                     logger.warning(
                         "Unable to find `%s`, skipping url replacement.",
-                        value.geturl(), extra = {
+                        value.geturl(), extra={
                             'limit_msg': ("Other resources were not found "
                                           "and their urls not replaced")})
             elif what == 'category':
                 origin = '/'.join((siteurl, Category(path, self.settings).url))
             elif what == 'tag':
                 origin = '/'.join((siteurl, Tag(path, self.settings).url))
+            elif what == 'index':
+                origin = '/'.join((siteurl, self.settings['INDEX_SAVE_AS']))
+            elif what == 'author':
+                origin = '/'.join((siteurl, Author(path, self.settings).url))
+            else:
+                logger.warning(
+                    "Replacement Indicator '%s' not recognized, "
+                    "skipping replacement",
+                    what)
 
             # keep all other parts, such as query, fragment, etc.
             parts = list(value)
@@ -259,6 +273,9 @@ class Content(object):
 
         return hrefs.sub(replacer, content)
 
+    def get_siteurl(self):
+        return self._context.get('localsiteurl', '')
+
     @memoized
     def get_content(self, siteurl):
         if hasattr(self, '_get_content'):
@@ -267,22 +284,19 @@ class Content(object):
             content = self._content
         return self._update_content(content, siteurl)
 
-    def get_siteurl(self):
-        return self._context.get('localsiteurl', '')
-
     @property
     def content(self):
         return self.get_content(self.get_siteurl())
 
-    def _get_summary(self):
+    @memoized
+    def get_summary(self, siteurl):
         """Returns the summary of an article.
 
         This is based on the summary metadata if set, otherwise truncate the
         content.
         """
         if hasattr(self, '_summary'):
-            return self._update_content(self._summary,
-                                        self.get_siteurl())
+            return self._update_content(self._summary, siteurl)
 
         if self.settings['SUMMARY_MAX_LENGTH'] is None:
             return self.content
@@ -290,14 +304,16 @@ class Content(object):
         return truncate_html_words(self.content,
                                    self.settings['SUMMARY_MAX_LENGTH'])
 
-    @memoized
-    def get_summary(self, siteurl):
-        """uses siteurl to be memoizable"""
-        return self._get_summary()
-
     @property
     def summary(self):
         return self.get_summary(self.get_siteurl())
+
+    def _get_summary(self):
+        """deprecated function to access summary"""
+
+        logger.warning('_get_summary() has been deprecated since 3.6.4. '
+                       'Use the summary decorator instead')
+        return self.summary
 
     @summary.setter
     def summary(self, value):
@@ -332,7 +348,9 @@ class Content(object):
 
         return posixize_path(
             os.path.relpath(
-                os.path.abspath(os.path.join(self.settings['PATH'], source_path)),
+                os.path.abspath(os.path.join(
+                    self.settings['PATH'],
+                    source_path)),
                 os.path.abspath(self.settings['PATH'])
             ))
 
@@ -397,9 +415,12 @@ class Static(Page):
     def attach_to(self, content):
         """Override our output directory with that of the given content object.
         """
-        # Determine our file's new output path relative to the linking document.
-        # If it currently lives beneath the linking document's source directory,
-        # preserve that relationship on output. Otherwise, make it a sibling.
+
+        # Determine our file's new output path relative to the linking
+        # document. If it currently lives beneath the linking
+        # document's source directory, preserve that relationship on output.
+        # Otherwise, make it a sibling.
+
         linking_source_dir = os.path.dirname(content.source_path)
         tail_path = os.path.relpath(self.source_path, linking_source_dir)
         if tail_path.startswith(os.pardir + os.sep):
@@ -415,11 +436,14 @@ class Static(Page):
         # 'some/content' with a file named 'index.html'.) Rather than trying
         # to figure it out by comparing the linking document's url and save_as
         # path, we simply build our new url from our new save_as path.
+
         new_url = path_to_url(new_save_as)
 
         def _log_reason(reason):
-            logger.warning("The {attach} link in %s cannot relocate %s "
-                "because %s. Falling back to {filename} link behavior instead.",
+            logger.warning(
+                "The {attach} link in %s cannot relocate "
+                "%s because %s. Falling back to "
+                "{filename} link behavior instead.",
                 content.get_relative_source_path(),
                 self.get_relative_source_path(), reason,
                 extra={'limit_msg': "More {attach} warnings silenced."})
@@ -447,5 +471,6 @@ def is_valid_content(content, f):
         content.check_properties()
         return True
     except NameError as e:
-        logger.error("Skipping %s: could not find information about '%s'", f, e)
+        logger.error(
+            "Skipping %s: could not find information about '%s'", f, e)
         return False
